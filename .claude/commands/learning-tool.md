@@ -3,6 +3,32 @@
 Build a new interactive learning tool for this repo, following the established patterns exactly.
 Takes a topic as argument: `/learning-tool <topic>`
 
+---
+
+## Core principle — interactivity is not optional
+
+**This repo exists so users learn by doing, not by reading.**
+
+Every tool must feel like a hands-on simulator or a game — not a diagram with a paragraph of explanation. Apply this test to every section you design:
+
+> *"Can the user break something, tune something, or cause a visible state change here?"*
+> If no → redesign the section until the answer is yes.
+
+**Minimum interactivity bar per section:**
+- At least one control the user operates (slider, button, toggle, text input, dropdown)
+- At least one visible consequence that happens immediately (animation, color change, counter update, log entry)
+- Static "info" sections are only allowed as collapsible `<details>` reference panels at the bottom
+
+**Game / challenge mode (add to at least one section per tool):**
+- Give the user a concrete goal: *"Configure this so it handles 2000 RPS without dropping requests"*
+- Or a diagnosis challenge: *"Something is wrong — can you find it?"* (show a broken state, user explores)
+- Or predict-then-verify: *"What do you think will happen? Press the button to find out"*
+- Winning/failing the challenge should produce a visible result (green banner, stat turns red, etc.)
+
+**The reference section at the bottom is the ONLY place where static text is acceptable.**
+
+---
+
 **CRITICAL RULE: Never write any code until the user has approved the plan. Always plan first, ask questions, wait.**
 
 ---
@@ -54,10 +80,16 @@ Output the plan in exactly this format:
 **Failure scenario:** [one sentence — the preset that shows what breaks and why it matters]
 
 **Sections:**
-1. **[Name]** — [what the user controls, what they observe, what interactions exist]
-2. **[Name]** — ...
+1. **[Name]**
+   - Controls: [what sliders/buttons/toggles/inputs the user has]
+   - Observes: [what changes visibly in real time]
+   - Challenge: [optional — goal or diagnosis task for this section]
+2. **[Name]**
+   - Controls: ...
+   - Observes: ...
 3. ...
-*(include at minimum: one main interactive simulator, one comparison or flow, one reference panel)*
+
+*(Every section except the bottom reference panel must have both Controls and Observes filled in. If you can't fill in Controls for a section, cut the section or merge it into another.)*
 
 **Scenario presets:**
 - Normal / happy path: ...
@@ -191,11 +223,13 @@ Color classes: `.good` = accent green · `.warn` = `#ffb74d` · `.bad` = `#ff4c4
 ```
 
 ### Non-negotiable rules
+- **Every section needs a control** — no section (except the bottom reference) is allowed to be static text or a static diagram
 - **Always include a failure/pitfall preset** — the "happy path" alone teaches nothing memorable
-- **Always show contrast** — never explain A without showing B alongside it
+- **Always show contrast** — never explain A without showing B alongside it; side-by-side or before/after
+- **At least one game/challenge element** — a goal, a diagnosis task, or a predict-then-verify moment
 - **Sliders need a speed multiplier** whenever the real-world timescale is > 5 seconds
-- **Reference section** at the bottom using `<details>` + `<summary>` — collapsible, covers: when to use, common pitfalls, config snippets
-- **Scenario preset buttons** row above the main controls
+- **Reference section at the bottom only** — using `<details>` + `<summary>`, collapsible; this is the only place static text lives
+- **Scenario preset buttons** row above the main controls so users can jump straight to key learning moments
 
 ### index.html card template
 
@@ -224,12 +258,18 @@ Add card inside `.cards` div:
 
 ## Quality checklist (verify before committing)
 
-- [ ] Accent color is unique — not used by any existing tool
-- [ ] Back link points to `index.html`
+**Interactivity (core principle — check these first):**
+- [ ] Every section except the reference panel has at least one user control
+- [ ] Every control produces an immediate visible consequence
+- [ ] At least one game/challenge element exists (goal, diagnosis, or predict-then-verify)
 - [ ] At least one failure/pitfall scenario preset exists
 - [ ] At least one comparison (side-by-side or before/after) exists
+
+**Technical:**
+- [ ] Accent color is unique — not used by any existing tool
+- [ ] Back link points to `index.html`
 - [ ] Speed multiplier present if any simulation runs > 5s real-time
-- [ ] Reference section at bottom with `<details>` blocks
+- [ ] Reference section at bottom with `<details>` blocks (only static text allowed here)
 - [ ] `index.html` updated with card and CSS
 - [ ] Zero external dependencies (no CDN links, no `<script src="...">`)
 - [ ] Committed and pushed to current branch
