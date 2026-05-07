@@ -1,51 +1,51 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Replace https://example.com with your actual domain before publishing -->
+
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 
   <url>
-    <loc>https://example.com/</loc>
+    <loc>https://playtolearn.dev/</loc>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
 
   <url>
-    <loc>https://example.com/about.html</loc>
+    <loc>https://playtolearn.dev/about.html</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
 
   <url>
-    <loc>https://example.com/kafka-playground.html</loc>
+    <loc>https://playtolearn.dev/kafka-playground.html</loc>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
 
   <url>
-    <loc>https://example.com/rate-limit-explainer.html</loc>
+    <loc>https://playtolearn.dev/rate-limit-explainer.html</loc>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
 
   <url>
-    <loc>https://example.com/redis-cluster-explainer.html</loc>
+    <loc>https://playtolearn.dev/redis-cluster-explainer.html</loc>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
 
   <url>
-    <loc>https://example.com/spring-mvc-vs-webflux.html</loc>
+    <loc>https://playtolearn.dev/spring-mvc-vs-webflux.html</loc>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
 
   <url>
-    <loc>https://example.com/lettuce-dns-explainer.html</loc>
+    <loc>https://playtolearn.dev/lettuce-dns-explainer.html</loc>
     <changefreq>monthly</changefreq>
     <priority>0.9</priority>
   </url>
 
   <url>
-    <loc>https://example.com/privacy.html</loc>
+    <loc>https://playtolearn.dev/privacy.html</loc>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
