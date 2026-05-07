@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lettuce DNS Resolution</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; padding: 20px; }
+h1 { text-align: center; margin-bottom: 6px; color: #48dbfb; }
+.subtitle { text-align: center; color: #888; margin-bottom: 22px; font-size: 14px; }
+a.back { color: #888; font-size: 12px; text-decoration: none; }
+a.back:hover { color: #48dbfb; }
+.top-bar { display: flex; justify-content: space-between; align-items: center; max-width: 1400px; margin: 0 auto 14px; }
+
+/* ---- shared ---- */
+.section { max-width: 1400px; margin: 0 auto 24px; }
+.section-title { font-size: 16px; font-weight: 700; color: #48dbfb; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.section-title .badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: #1a2a4a; border: 1px solid #48dbfb; color: #48dbfb; font-weight: 600; }
+.section-sub { color: #888; font-size: 12px; margin-bottom: 14px; line-height: 1.6; }
+.panel { background: #16213e; border: 1px solid #2a3a5e; border-radius: 12px; padding: 16px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+
+button { padding: 7px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.15s; }
+button:hover:not(:disabled) { transform: translateY(-1px); }
+button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.btn-primary { background: #48dbfb; color: #1a1a2e; }
+.btn-danger  { background: #ff4c4c; color: #fff; }
+.btn-warn    { background: #ffb74d; color: #1a1a2e; }
+.btn-reset   { background: #333; color: #aaa; border: 1px solid #555; }
+.btn-green   { background: #6db33f; color: #1a1a2e; }
+select, input[type=text] { background: #0d1b2a; color: #eee; border: 1px solid #2a3a5e; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-family: monospace; }
+input[type=range] { accent-color: #48dbfb; }
+label { font-size: 11px; color: #aaa; }
+.ctrl { display: flex; flex-direction: column; gap: 4px; }
+.ctrl .vv { font-size: 12px; color: #48dbfb; font-weight: 700; font-family: monospace; }
+
+/* ---- resolver cards ---- */
+.resolver-card { border-radius: 10px; padding: 14px; border: 2px solid; cursor: pointer; transition: all 0.2s; }
+.resolver-card.jvm { border-color: #ffb74d; background: #1e1a0e; }
+.resolver-card.netty { border-color: #6db33f; background: #0e1e12; }
+.resolver-card .card-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.resolver-card.jvm .card-title { color: #ffb74d; }
+.resolver-card.netty .card-title { color: #6db33f; }
+.resolver-card .card-sub { font-size: 11px; color: #888; margin-bottom: 10px; }
+.prop-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #2a3a5e; font-size: 11px; }
+.prop-row:last-child { border-bottom: none; }
+.prop-row .pk { color: #aaa; }
+.prop-row .pv.bad { color: #ff4c4c; font-weight: 600; }
+.prop-row .pv.good { color: #6db33f; font-weight: 600; }
+.prop-row .pv.warn { color: #ffb74d; font-weight: 600; }
+
+/* call stack */
+.call-stack { margin-top: 12px; display: none; }
+.call-stack.open { display: block; }
+.stack-title { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.stack-line { font-family: monospace; font-size: 11px; padding: 4px 8px; border-radius: 4px; margin-bottom: 3px; display: flex; align-items: center; gap: 8px; }
+.stack-line.normal { background: #1a2a4a; color: #c8d0e0; }
+.stack-line.blocking { background: #3a1a0a; color: #ffb74d; border: 1px solid #ffb74d; }
+.stack-line.async { background: #0a2a1a; color: #6db33f; border: 1px solid #6db33f; }
+.stack-line .tag { font-size: 9px; padding: 1px 6px; border-radius: 8px; font-weight: 700; }
+.stack-line.blocking .tag { background: #ff4c4c; color: #fff; }
+.stack-line.async .tag { background: #6db33f; color: #1a1a2e; }
+
+/* event loop vis */
+.eloop-row { display: flex; gap: 6px; margin-top: 12px; }
+.el-thread { flex: 1; height: 28px; border-radius: 4px; background: #1a2a4a; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #888; font-family: monospace; position: relative; overflow: hidden; transition: all 0.3s; }
+.el-thread.active { background: #0a2a1a; color: #6db33f; }
+.el-thread.blocked { background: #3a1a0a; color: #ffb74d; }
+.el-thread.blocked::after { content: '⏸ BLOCKED'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #3a1a0a; color: #ffb74d; font-size: 9px; font-weight: 700; }
+.el-thread.dns-async::after { content: 'DNS→'; position: absolute; right: 4px; font-size: 8px; color: #6db33f; }
+
+/* ---- TTL simulator ---- */
+.ttl-controls { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; padding: 12px; background: #0d1b2a; border-radius: 8px; margin-bottom: 14px; }
+.dns-record-box { background: #0d1b2a; border: 1px solid #48dbfb; border-radius: 8px; padding: 12px; margin-bottom: 14px; }
+.dns-record-title { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.dns-record-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.dns-record-ip { font-family: monospace; font-size: 18px; font-weight: 700; color: #48dbfb; }
+.dns-record-ip.changed { color: #6db33f; animation: ipFlash 0.5s ease; }
+@keyframes ipFlash { 0% { color: #ff4c4c; transform: scale(1.2); } 100% { color: #6db33f; } }
+.dns-record-ttl { font-size: 12px; color: #888; font-family: monospace; }
+.dns-record-ttl .tv { color: #ffb74d; font-weight: 700; font-size: 16px; }
+
+.client-box { background: #0d1b2a; border-radius: 10px; padding: 12px; border: 2px solid; }
+.client-box.jvm { border-color: #ffb74d; }
+.client-box.netty { border-color: #6db33f; }
+.cb-title { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+.client-box.jvm .cb-title { color: #ffb74d; }
+.client-box.netty .cb-title { color: #6db33f; }
+.cb-row { display: flex; justify-content: space-between; font-size: 11px; color: #aaa; margin-bottom: 4px; font-family: monospace; }
+.cb-row .vv { color: #fff; }
+.cb-row .vv.stale { color: #ff4c4c; }
+.cb-row .vv.fresh { color: #6db33f; }
+.conn-status { margin-top: 10px; padding: 8px; border-radius: 6px; text-align: center; font-size: 12px; font-weight: 700; transition: all 0.3s; }
+.conn-status.ok { background: #0a2a1a; color: #6db33f; border: 1px solid #6db33f; }
+.conn-status.err { background: #3a1a0a; color: #ff4c4c; border: 1px solid #ff4c4c; animation: connPulse 0.8s ease infinite; }
+@keyframes connPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+.ttl-bar-track { height: 8px; background: #1a2a4a; border-radius: 4px; overflow: hidden; margin: 4px 0; }
+.ttl-bar-fill { height: 100%; border-radius: 4px; transition: width 0.1s linear; }
+.client-box.jvm .ttl-bar-fill { background: #ffb74d; }
+.client-box.netty .ttl-bar-fill { background: #6db33f; }
+
+.ttl-log { max-height: 160px; overflow-y: auto; font-size: 10px; font-family: monospace; padding: 8px; background: #0a0a1a; border-radius: 6px; border: 1px solid #2a3a5e; margin-top: 12px; }
+.ttl-log div { margin-bottom: 2px; }
+.l-jvm { color: #ffb74d; }
+.l-netty { color: #6db33f; }
+.l-dns { color: #48dbfb; }
+.l-err { color: #ff4c4c; }
+.l-info { color: #666; }
+
+/* ---- DNS flow ---- */
+.dns-flow { display: flex; flex-direction: column; align-items: center; padding: 10px 20px; position: relative; }
+.dns-node { width: 100%; max-width: 460px; background: #1a2a4a; border: 2px solid #2a3a5e; border-radius: 10px; padding: 12px 16px; position: relative; transition: all 0.3s; }
+.dns-node.querying { border-color: #ffb74d; background: #2a1a0a; }
+.dns-node.hit { border-color: #6db33f; background: #0a2a1a; }
+.dns-node.miss { border-color: #ff4c4c; background: #2a0a0a; opacity: 0.8; }
+.dns-node.skip { opacity: 0.35; }
+.dns-node-title { font-size: 12px; font-weight: 700; color: #aaa; }
+.dns-node.querying .dns-node-title { color: #ffb74d; }
+.dns-node.hit .dns-node-title { color: #6db33f; }
+.dns-node.miss .dns-node-title { color: #ff4c4c; }
+.dns-node-detail { font-size: 10px; color: #666; font-family: monospace; margin-top: 2px; }
+.dns-node-result { font-size: 11px; font-family: monospace; margin-top: 6px; display: none; }
+.dns-node.hit .dns-node-result, .dns-node.miss .dns-node-result { display: block; }
+.dns-node.hit .dns-node-result { color: #6db33f; }
+.dns-node.miss .dns-node-result { color: #ff4c4c; }
+.dns-connector { width: 2px; height: 28px; background: #2a3a5e; position: relative; }
+.dns-connector.active { background: #48dbfb; }
+.dns-packet { width: 12px; height: 12px; background: #48dbfb; border-radius: 50%; position: absolute; left: 50%; transform: translateX(-50%); top: -6px; display: none; transition: top 0.4s ease; box-shadow: 0 0 6px #48dbfb; }
+.dns-packet.visible { display: block; }
+.dns-packet.returning { background: #6db33f; box-shadow: 0 0 6px #6db33f; }
+
+/* ---- FQDN section ---- */
+.fqdn-controls { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; padding: 10px; background: #0d1b2a; border-radius: 8px; margin-bottom: 12px; }
+.terminal { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 12px; font-family: 'Menlo', 'Consolas', monospace; font-size: 11px; min-height: 160px; max-height: 240px; overflow-y: auto; }
+.term-line { margin-bottom: 3px; line-height: 1.5; }
+.term-prompt { color: #888; }
+.term-query { color: #48dbfb; }
+.term-fail { color: #ff4c4c; }
+.term-ok { color: #6db33f; }
+.term-latency { color: #ffb74d; }
+.term-comment { color: #555; }
+.total-line { margin-top: 8px; padding: 6px 8px; background: #1a1a2e; border-radius: 4px; font-size: 12px; font-weight: 700; }
+
+/* ---- resolv.conf ---- */
+.resolv-conf { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 14px; font-family: 'Menlo', 'Consolas', monospace; font-size: 12px; line-height: 1.7; }
+.rc-comment { color: #555; }
+.rc-key { color: #48dbfb; }
+.rc-val { color: #c8d0e0; }
+.rc-highlight { color: #ffb74d; font-weight: 700; }
+.rc-annotation { color: #888; font-size: 10px; margin-left: 12px; font-family: sans-serif; }
+
+/* reference */
+.ref-section { max-width: 1400px; margin: 0 auto 24px; background: #0d1b2a; border-radius: 12px; padding: 16px; border: 1px solid #2a3a5e; }
+.ref-section h2 { color: #ffb74d; font-size: 14px; margin-bottom: 10px; }
+.ref-section details { margin-bottom: 6px; padding: 8px 10px; background: #16213e; border-radius: 6px; border: 1px solid #2a3a5e; }
+.ref-section summary { cursor: pointer; font-size: 12px; color: #48dbfb; font-weight: 600; }
+.ref-section details p, .ref-section details ul, .ref-section details pre { color: #aaa; font-size: 12px; line-height: 1.6; margin-top: 6px; }
+.ref-section details ul { padding-left: 18px; }
+.ref-section code, .ref-section pre { background: #0a0a1a; padding: 1px 5px; border-radius: 3px; color: #ffb74d; font-size: 11px; }
+.ref-section pre { padding: 8px; display: block; }
+
+.kw { color: #c084ff; }
+.ann { color: #6db33f; }
+.str { color: #ffb74d; }
+.cm { color: #5a6478; font-style: italic; }
+.ty { color: #48dbfb; }
+.fn { color: #ffe066; }
+
+.warn-box { background: #2d1010; border: 1px solid #ff4c4c; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #ffcccc; line-height: 1.6; margin-bottom: 12px; }
+.warn-box strong { color: #ff4c4c; }
+.info-box { background: #0d1b2a; border: 1px solid #48dbfb; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #cceeff; line-height: 1.6; margin-bottom: 12px; }
+.info-box strong { color: #48dbfb; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <a href="index.html" class="back">&larr; Back</a>
+</div>
+<h1>Lettuce DNS Resolution</h1>
+<p class="subtitle">JVM vs Netty resolver · EKS CoreDNS flow · FQDN vs non-FQDN — all interactive</p>
+
+<!-- ============================= SECTION 1: RESOLVER COMPARISON ============================= -->
+<div class="section">
+  <div class="section-title">1. Why switch from JVM to Netty DNS resolver? <span class="badge">Lettuce 6.x</span></div>
+  <div class="section-sub">
+    The JVM DNS resolver is <strong style="color:#ff4c4c">synchronous and blocking</strong> — it blocks the Netty event loop thread during the DNS lookup.
+    The Netty resolver is <strong style="color:#6db33f">async and non-blocking</strong> — and it actually respects the TTL in DNS responses.
+    Both problems compound each other in a high-throughput Redis cluster.
+  </div>
+
+  <div class="grid2">
+    <!-- JVM -->
+    <div class="resolver-card jvm" id="jvmCard" onclick="toggleStack('jvm')">
+      <div class="card-title">JVM Resolver (pre Lettuce 6.x default)</div>
+      <div class="card-sub">Uses <code style="color:#ffb74d">InetAddress.getAllByName()</code> · Click to see call stack</div>
+      <div class="prop-row"><span class="pk">Threading</span><span class="pv bad">Blocking — stalls event loop</span></div>
+      <div class="prop-row"><span class="pk">DNS TTL</span><span class="pv bad">Ignored — uses JVM cache TTL</span></div>
+      <div class="prop-row"><span class="pk">JVM cache TTL default</span><span class="pv warn">30s (or ∞ with SecurityManager)</span></div>
+      <div class="prop-row"><span class="pk">Failover response time</span><span class="pv bad">Up to JVM TTL seconds</span></div>
+      <div class="prop-row"><span class="pk">Event loop impact</span><span class="pv bad">Thread blocked during lookup</span></div>
+      <div class="call-stack" id="stackJvm">
+        <div class="stack-title">Call chain inside Lettuce event loop</div>
+        <div class="stack-line normal">RedisClusterClient.connect()</div>
+        <div class="stack-line normal">DefaultEndpoint.connect()</div>
+        <div class="stack-line blocking"><span class="tag">BLOCKS</span>InetAddress.getAllByName("my-redis.cache.amazonaws.com")</div>
+        <div class="stack-line blocking"><span class="tag">BLOCKS</span>OS DNS syscall — waits for network response</div>
+        <div class="stack-line normal">returns InetAddress[] — event loop resumes</div>
+        <div style="margin-top:8px;">
+          <div class="stack-title">Event loop during DNS lookup</div>
+          <div class="eloop-row" id="jvmEloop">
+            <div class="el-thread" id="jel0">EL-0</div>
+            <div class="el-thread" id="jel1">EL-1</div>
+            <div class="el-thread" id="jel2">EL-2</div>
+            <div class="el-thread" id="jel3">EL-3</div>
+          </div>
+          <div style="text-align:center; margin-top:6px;">
+            <button class="btn-warn" onclick="event.stopPropagation(); demoBlock()">▶ Simulate DNS call</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Netty -->
+    <div class="resolver-card netty" id="nettyCard" onclick="toggleStack('netty')">
+      <div class="card-title">Netty DNS Resolver (Lettuce 6.x recommended)</div>
+      <div class="card-sub">Uses Netty's <code style="color:#6db33f">DnsAddressResolverGroup</code> · Click to see call chain</div>
+      <div class="prop-row"><span class="pk">Threading</span><span class="pv good">Non-blocking — event loop stays free</span></div>
+      <div class="prop-row"><span class="pk">DNS TTL</span><span class="pv good">Respected — re-resolves when TTL expires</span></div>
+      <div class="prop-row"><span class="pk">Cache TTL source</span><span class="pv good">From DNS response (e.g. 5s for ElastiCache)</span></div>
+      <div class="prop-row"><span class="pk">Failover response time</span><span class="pv good">Within DNS record TTL seconds</span></div>
+      <div class="prop-row"><span class="pk">Event loop impact</span><span class="pv good">None — async Future callback</span></div>
+      <div class="call-stack" id="stackNetty">
+        <div class="stack-title">Call chain inside Lettuce event loop</div>
+        <div class="stack-line normal">RedisClusterClient.connect()</div>
+        <div class="stack-line normal">DefaultEndpoint.connect()</div>
+        <div class="stack-line async"><span class="tag">ASYNC</span>DnsAddressResolverGroup.resolve("my-redis.cache.amazonaws.com")</div>
+        <div class="stack-line async"><span class="tag">ASYNC</span>Sends DNS UDP packet → event loop thread freed immediately</div>
+        <div class="stack-line normal">…handles other Redis I/O…</div>
+        <div class="stack-line async"><span class="tag">ASYNC</span>DNS response arrives → Future callback → connect proceeds</div>
+        <div style="margin-top:8px;">
+          <div class="stack-title">Event loop during DNS lookup</div>
+          <div class="eloop-row" id="nettyEloop">
+            <div class="el-thread" id="nel0">EL-0</div>
+            <div class="el-thread" id="nel1">EL-1</div>
+            <div class="el-thread" id="nel2">EL-2</div>
+            <div class="el-thread" id="nel3">EL-3</div>
+          </div>
+          <div style="text-align:center; margin-top:6px;">
+            <button class="btn-green" onclick="event.stopPropagation(); demoAsync()">▶ Simulate DNS call</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================= SECTION 2: TTL SIMULATOR ============================= -->
+<div class="section">
+  <div class="section-title">2. Failover simulator — watch JVM hold stale IP while Netty re-resolves <span class="badge">interactive</span></div>
+  <div class="section-sub">
+    AWS ElastiCache sets a short DNS TTL (1–5s) so clients re-resolve quickly after a failover. The JVM ignores this and holds the old IP for its own configured TTL. Trigger a failover and watch the difference.
+  </div>
+
+  <div class="panel">
+    <div class="ttl-controls">
+      <div class="ctrl">
+        <label>JVM cache TTL</label>
+        <select id="selJvmTtl">
+          <option value="-1">-1 (cache forever — SecurityManager default)</option>
+          <option value="30" selected>30s (OpenJDK default)</option>
+          <option value="5">5s (custom setting)</option>
+          <option value="0">0 (no caching)</option>
+        </select>
+      </div>
+      <div class="ctrl">
+        <label>DNS record TTL (ElastiCache)</label>
+        <select id="selDnsTtl">
+          <option value="1">1s</option>
+          <option value="5" selected>5s (typical)</option>
+          <option value="30">30s</option>
+        </select>
+      </div>
+      <div class="ctrl">
+        <label>Sim speed: <span class="vv" id="vSpeed">5</span>x</label>
+        <input type="range" id="rngSpeed" min="1" max="20" value="5">
+      </div>
+      <button class="btn-primary" id="btnTtlStart">▶ Start</button>
+      <button class="btn-danger" id="btnFailover" disabled>💥 Trigger Failover</button>
+      <button class="btn-reset" id="btnTtlReset">Reset</button>
+    </div>
+
+    <!-- DNS record -->
+    <div class="dns-record-box">
+      <div class="dns-record-title">DNS Record (what the authoritative DNS server has)</div>
+      <div class="dns-record-row">
+        <div>
+          <div style="font-size:11px; color:#888; font-family:monospace;">my-redis.abc123.ng.0001.euw1.cache.amazonaws.com</div>
+          <div style="margin-top:4px;">
+            <span class="dns-record-ip" id="dnsRecordIP">10.0.1.5</span>
+            <span style="font-size:11px; color:#888; margin-left:8px;">Type A, TTL=<span id="dnsRecordTTL">5</span>s</span>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div class="dns-record-ttl">TTL countdown: <span class="tv" id="dnsCountdown">5.0</span>s</div>
+          <div style="font-size:10px; color:#666; margin-top:4px;" id="dnsStatus">active</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Client boxes -->
+    <div class="grid2" style="margin-bottom:12px;">
+      <div class="client-box jvm">
+        <div class="cb-title">JVM Client (InetAddress cache)</div>
+        <div class="cb-row"><span>Cached IP:</span><span class="vv" id="jvmIP">10.0.1.5</span></div>
+        <div class="cb-row"><span>Cache age:</span><span class="vv" id="jvmAge">0.0s</span></div>
+        <div class="cb-row"><span>Cache TTL:</span><span class="vv" id="jvmTtlDisp">30s</span></div>
+        <div style="margin: 4px 0;">
+          <div style="font-size:10px; color:#888; margin-bottom:2px;">Time until re-resolve</div>
+          <div class="ttl-bar-track"><div class="ttl-bar-fill" id="jvmBar" style="width:100%;"></div></div>
+        </div>
+        <div class="conn-status ok" id="jvmConn">✓ Connected to Redis</div>
+      </div>
+      <div class="client-box netty">
+        <div class="cb-title">Netty DNS Client (respects record TTL)</div>
+        <div class="cb-row"><span>Cached IP:</span><span class="vv" id="nettyIP">10.0.1.5</span></div>
+        <div class="cb-row"><span>TTL remaining:</span><span class="vv" id="nettyTtlDisp">5.0s</span></div>
+        <div class="cb-row"><span>Source:</span><span class="vv" style="color:#6db33f;">DNS response</span></div>
+        <div style="margin: 4px 0;">
+          <div style="font-size:10px; color:#888; margin-bottom:2px;">Time until re-resolve</div>
+          <div class="ttl-bar-track"><div class="ttl-bar-fill" id="nettyBar" style="width:100%;"></div></div>
+        </div>
+        <div class="conn-status ok" id="nettyConn">✓ Connected to Redis</div>
+      </div>
+    </div>
+
+    <div class="ttl-log" id="ttlLog"></div>
+  </div>
+</div>
+
+<!-- ============================= SECTION 3: EKS DNS FLOW ============================= -->
+<div class="section">
+  <div class="section-title">3. EKS DNS resolution flow <span class="badge">step-by-step</span></div>
+  <div class="section-sub">
+    Pick a hostname and watch the query travel through each layer. Toggle between an external hostname (ElastiCache) and an in-cluster Redis service.
+  </div>
+
+  <div class="panel">
+    <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:14px; padding:10px; background:#0d1b2a; border-radius:8px;">
+      <div class="ctrl" style="flex:1; min-width:260px;">
+        <label>Hostname to resolve</label>
+        <input type="text" id="dnsHostInput" value="my-redis.abc123.ng.0001.euw1.cache.amazonaws.com" style="width:100%;">
+      </div>
+      <div class="ctrl">
+        <label>Type</label>
+        <select id="selDnsType" onchange="dnsTypeChanged()">
+          <option value="external">External (ElastiCache / internet)</option>
+          <option value="cluster">In-cluster Redis service</option>
+          <option value="private">Private hosted zone (Route 53)</option>
+        </select>
+      </div>
+      <button class="btn-primary" id="btnDnsResolve" onclick="runDnsFlow()">▶ Resolve</button>
+      <button class="btn-reset" onclick="resetDnsFlow()">Reset</button>
+    </div>
+
+    <div style="display:flex; gap:20px; flex-wrap:wrap;">
+      <!-- Flow -->
+      <div style="flex:1; min-width:280px;">
+        <div class="dns-flow" id="dnsFlow">
+          <div class="dns-node" id="dn-pod">
+            <div class="dns-node-title">Your App Pod (Lettuce client)</div>
+            <div class="dns-node-detail">resolving hostname via /etc/resolv.conf → nameserver 10.96.0.10</div>
+            <div class="dns-node-result" id="dn-pod-r"></div>
+          </div>
+          <div class="dns-connector" id="dc-1"><div class="dns-packet" id="dp-1"></div></div>
+          <div class="dns-node" id="dn-hosts">
+            <div class="dns-node-title">/etc/hosts</div>
+            <div class="dns-node-detail">checked first — loopback, node hostname overrides</div>
+            <div class="dns-node-result" id="dn-hosts-r"></div>
+          </div>
+          <div class="dns-connector" id="dc-2"><div class="dns-packet" id="dp-2"></div></div>
+          <div class="dns-node" id="dn-coredns">
+            <div class="dns-node-title">CoreDNS (kube-dns) — 10.96.0.10</div>
+            <div class="dns-node-detail">knows all cluster services · caches external lookups · forwards unknown to VPC DNS</div>
+            <div class="dns-node-result" id="dn-coredns-r"></div>
+          </div>
+          <div class="dns-connector" id="dc-3"><div class="dns-packet" id="dp-3"></div></div>
+          <div class="dns-node" id="dn-vpcdns">
+            <div class="dns-node-title">AWS VPC DNS — 169.254.169.253</div>
+            <div class="dns-node-detail">resolves private hosted zones (Route 53 private) + forwards public</div>
+            <div class="dns-node-result" id="dn-vpcdns-r"></div>
+          </div>
+          <div class="dns-connector" id="dc-4"><div class="dns-packet" id="dp-4"></div></div>
+          <div class="dns-node" id="dn-route53">
+            <div class="dns-node-title">Route 53 Public DNS</div>
+            <div class="dns-node-detail">authoritative for *.cache.amazonaws.com and other AWS domains</div>
+            <div class="dns-node-result" id="dn-route53-r"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Explanation panel -->
+      <div style="flex:1; min-width:240px;">
+        <div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px;">What happened</div>
+        <div class="ttl-log" style="max-height:320px;" id="dnsLog">
+          <div class="l-info">Press ▶ Resolve to trace the query.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================= SECTION 4: FQDN vs non-FQDN ============================= -->
+<div class="section">
+  <div class="section-title">4. FQDN vs non-FQDN — the ndots:5 query explosion <span class="badge">interactive</span></div>
+  <div class="section-sub">
+    Kubernetes sets <code style="color:#ffb74d">ndots:5</code> by default. If your hostname has fewer than 5 dots, CoreDNS tries every search domain before treating it as absolute. Type a name and press Resolve to see both paths.
+  </div>
+
+  <div class="panel">
+    <div class="fqdn-controls">
+      <div class="ctrl" style="flex:1; min-width:200px;">
+        <label>Hostname (short/partial)</label>
+        <input type="text" id="fqdnInput" value="redis-master" style="width:100%;">
+      </div>
+      <div class="ctrl">
+        <label>ndots setting</label>
+        <select id="selNdots" onchange="updateResolvConf()">
+          <option value="5" selected>5 (Kubernetes default)</option>
+          <option value="2">2</option>
+          <option value="1">1</option>
+        </select>
+      </div>
+      <div class="ctrl">
+        <label>Namespace</label>
+        <input type="text" id="nsInput" value="redis" style="width:90px;">
+      </div>
+      <button class="btn-primary" onclick="runFqdnDemo()">▶ Resolve both</button>
+      <button class="btn-reset" onclick="clearFqdn()">Clear</button>
+    </div>
+
+    <div class="grid2">
+      <div>
+        <div style="font-size:11px; color:#ff4c4c; font-weight:700; margin-bottom:6px;">non-FQDN (no trailing dot)</div>
+        <div class="terminal" id="termNonFqdn"><div class="term-line term-comment"># ready — press ▶ Resolve both</div></div>
+        <div class="total-line" id="totalNonFqdn" style="display:none;"></div>
+      </div>
+      <div>
+        <div style="font-size:11px; color:#6db33f; font-weight:700; margin-bottom:6px;">FQDN (with trailing dot)</div>
+        <div class="terminal" id="termFqdn"><div class="term-line term-comment"># ready — press ▶ Resolve both</div></div>
+        <div class="total-line" id="totalFqdn" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================= SECTION 5: resolv.conf ============================= -->
+<div class="section">
+  <div class="section-title">5. EKS /etc/resolv.conf — live preview</div>
+  <div class="section-sub">
+    Every EKS pod gets this injected automatically. The <code style="color:#ffb74d">ndots</code> value drives the FQDN expansion above. Adjust the controls to see how it changes.
+  </div>
+
+  <div class="panel">
+    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px; padding:10px; background:#0d1b2a; border-radius:8px;">
+      <div class="ctrl">
+        <label>ndots</label>
+        <select id="rcNdots" onchange="updateResolvConf(); document.getElementById('selNdots').value=this.value;">
+          <option value="5" selected>5 (k8s default)</option>
+          <option value="2">2</option>
+          <option value="1">1</option>
+        </select>
+      </div>
+      <div class="ctrl">
+        <label>Namespace</label>
+        <input type="text" id="rcNs" value="redis" oninput="updateResolvConf()" style="width:90px;">
+      </div>
+      <div class="ctrl">
+        <label>Cluster domain</label>
+        <input type="text" id="rcCluster" value="cluster.local" oninput="updateResolvConf()" style="width:130px;">
+      </div>
+      <div class="ctrl">
+        <label>AWS region suffix</label>
+        <input type="text" id="rcRegion" value="eu-west-1.compute.internal" oninput="updateResolvConf()" style="width:180px;">
+      </div>
+    </div>
+    <div class="resolv-conf" id="resolvConf"></div>
+    <div style="margin-top:10px; font-size:11px; color:#888; line-height:1.6;">
+      The search list is tried in order when a name has fewer than <span id="rcNdotsHint" style="color:#ffb74d; font-weight:700;">5</span> dots. With <code style="color:#ffb74d">redis-master</code> (0 dots) all 4 domains get tried before the bare name — that's 5 DNS lookups.
+    </div>
+  </div>
+</div>
+
+<!-- ============================= REFERENCE ============================= -->
+<div class="ref-section">
+  <h2>Reference</h2>
+  <details open>
+    <summary>Configure Lettuce to use the Netty DNS resolver</summary>
+    <pre><span class="ty">ClientResources</span> resources = <span class="ty">DefaultClientResources</span>.<span class="fn">builder</span>()
+    <span class="cm">// Use Netty's async DNS resolver instead of InetAddress</span>
+    .<span class="fn">dnsResolver</span>(<span class="kw">new</span> <span class="ty">DnsResolvers</span>.<span class="fn">NettyDnsResolver</span>())
+    <span class="cm">// Refresh cluster topology when DNS changes</span>
+    .<span class="fn">build</span>();
+
+<span class="ty">RedisClusterClient</span> client = <span class="ty">RedisClusterClient</span>.<span class="fn">create</span>(
+    resources, <span class="str">"redis://my-redis.cache.amazonaws.com"</span>);</pre>
+    <p>Or with Spring Data Redis, configure the <code>LettuceClientConfigurationBuilderCustomizer</code> bean.</p>
+  </details>
+  <details>
+    <summary>Override JVM DNS TTL (stopgap if you can't upgrade Lettuce)</summary>
+    <pre><span class="cm"># In $JAVA_HOME/conf/security/java.security</span>
+networkaddress.cache.ttl=5
+networkaddress.cache.negative.ttl=1
+
+<span class="cm"># Or as JVM argument at startup</span>
+-Dsun.net.inetaddr.ttl=5</pre>
+    <p>This affects the <em>entire JVM</em> — all DNS lookups, not just Lettuce. The Netty resolver approach is scoped to Lettuce only and is generally preferred.</p>
+  </details>
+  <details>
+    <summary>Fix the FQDN / ndots problem in EKS</summary>
+    <pre><span class="cm"># Option 1: always use FQDN with trailing dot in your connection string</span>
+redis-master.redis.svc.cluster.local.
+
+<span class="cm"># Option 2: set ndots:1 in your pod spec (most effective)</span>
+spec:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "1"
+
+<span class="cm"># Option 3: set ndots:2 — still avoids most explosion but keeps
+# short cluster-internal names working</span></pre>
+    <p>Setting <code>ndots:1</code> means any name with 1 or more dots is treated as absolute first — practically eliminates spurious queries for ElastiCache endpoints which already have many dots.</p>
+  </details>
+  <details>
+    <summary>AWS ElastiCache DNS specifics</summary>
+    <ul>
+      <li>ElastiCache primary endpoints: TTL typically <strong>1–5 seconds</strong> — very short to enable fast failover</li>
+      <li>Reader endpoints: TTL also short; balanced across replicas</li>
+      <li>Cluster configuration endpoint: resolves to the entry point for cluster discovery</li>
+      <li>With JVM TTL=30 and ElastiCache TTL=5: after a failover you're stuck on the dead node IP for up to 30s even though DNS updated in 5s</li>
+      <li>With Netty DNS resolver: you re-resolve in ≤5s after failover</li>
+    </ul>
+  </details>
+  <details>
+    <summary>CoreDNS caching in EKS</summary>
+    <ul>
+      <li>CoreDNS has its own cache (default TTL cap: 30s for positive, 5s for negative)</li>
+      <li>This means even with Netty DNS resolver, your effective re-resolve time = max(DNS record TTL, CoreDNS cache TTL)</li>
+      <li>For ElastiCache failover, configure CoreDNS to reduce its cache TTL: <code>cache 5</code> in the Corefile for the amazonaws.com zone</li>
+      <li>Check current CoreDNS config: <code>kubectl get configmap coredns -n kube-system -o yaml</code></li>
+    </ul>
+  </details>
+</div>
+
+<script>
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// =================== SECTION 1: RESOLVER CARDS ===================
+function toggleStack(type) {
+  const el = document.getElementById(type === 'jvm' ? 'stackJvm' : 'stackNetty');
+  el.classList.toggle('open');
+}
+
+async function demoBlock() {
+  const ids = ['jel0','jel1','jel2','jel3'];
+  ids.forEach(id => { const e = document.getElementById(id); e.className = 'el-thread'; e.textContent = id.replace('jel','EL-'); });
+  // Thread 0 gets the DNS call, blocks
+  await sleep(200);
+  document.getElementById('jel0').className = 'el-thread blocked';
+  document.getElementById('jel0').textContent = '';
+  // Other threads keep working
+  ['jel1','jel2','jel3'].forEach(id => document.getElementById(id).className = 'el-thread active');
+  await sleep(1800); // simulates ~20ms blocking, shown longer for effect
+  // Thread 0 free again
+  document.getElementById('jel0').className = 'el-thread active';
+  document.getElementById('jel0').textContent = 'EL-0';
+  await sleep(800);
+  ids.forEach(id => { const e = document.getElementById(id); e.className = 'el-thread'; e.textContent = id.replace('jel','EL-'); });
+}
+
+async function demoAsync() {
+  const ids = ['nel0','nel1','nel2','nel3'];
+  ids.forEach(id => { const e = document.getElementById(id); e.className = 'el-thread'; e.textContent = id.replace('nel','EL-'); });
+  await sleep(200);
+  // Thread 0 dispatches async DNS, gets freed immediately
+  document.getElementById('nel0').className = 'el-thread dns-async active';
+  document.getElementById('nel0').textContent = 'DNS↗';
+  ['nel1','nel2','nel3'].forEach(id => document.getElementById(id).className = 'el-thread active');
+  await sleep(500);
+  // Thread 0 free — no blocking
+  document.getElementById('nel0').className = 'el-thread active';
+  document.getElementById('nel0').textContent = 'EL-0';
+  await sleep(1200);
+  // DNS callback arrives on any free thread
+  document.getElementById('nel2').className = 'el-thread active';
+  document.getElementById('nel2').textContent = '✓DNS';
+  await sleep(600);
+  ids.forEach(id => { const e = document.getElementById(id); e.className = 'el-thread'; e.textContent = id.replace('nel','EL-'); });
+}
+
+// =================== SECTION 2: TTL SIMULATOR ===================
+const ttl = {
+  running: false,
+  speed: 5,
+  jvmTTL: 30,
+  dnsTTL: 5,
+  dnsIP: '10.0.1.5',
+  newIP: '10.0.1.8',
+  failover: false,
+  // JVM state
+  jvmCachedIP: '10.0.1.5',
+  jvmAge: 0,       // seconds since last resolved
+  jvmConnected: true,
+  // Netty state
+  nettyCachedIP: '10.0.1.5',
+  nettyTTLRem: 5,  // countdown from DNS TTL
+  nettyConnected: true,
+  // DNS record TTL countdown (for display)
+  dnsCountdown: 5,
+  lastT: 0,
+};
+
+function ttlLog(msg, cls = 'l-info') {
+  const el = document.getElementById('ttlLog');
+  const d = document.createElement('div');
+  d.className = cls;
+  d.textContent = `[${ttl.elapsed?.toFixed(1) ?? '0.0'}s] ${msg}`;
+  el.insertBefore(d, el.firstChild);
+}
+ttl.elapsed = 0;
+
+function resetTtlState() {
+  ttl.running = false;
+  ttl.failover = false;
+  ttl.elapsed = 0;
+  ttl.jvmCachedIP = '10.0.1.5';
+  ttl.jvmAge = 0;
+  ttl.jvmConnected = true;
+  ttl.nettyCachedIP = '10.0.1.5';
+  ttl.nettyTTLRem = ttl.dnsTTL;
+  ttl.nettyConnected = true;
+  ttl.dnsIP = '10.0.1.5';
+  ttl.dnsCountdown = ttl.dnsTTL;
+  document.getElementById('dnsRecordIP').textContent = '10.0.1.5';
+  document.getElementById('dnsRecordIP').className = 'dns-record-ip';
+  document.getElementById('dnsStatus').textContent = 'active';
+  document.getElementById('ttlLog').innerHTML = '';
+  renderTTL();
+}
+
+function renderTTL() {
+  const jvmTTLval = ttl.jvmTTL;
+  const jvmIPel = document.getElementById('jvmIP');
+  jvmIPel.textContent = ttl.jvmCachedIP;
+  jvmIPel.className = 'vv' + (ttl.failover && ttl.jvmCachedIP !== ttl.newIP ? ' stale' : ' fresh');
+  document.getElementById('jvmAge').textContent = ttl.jvmAge.toFixed(1) + 's';
+  document.getElementById('jvmTtlDisp').textContent = jvmTTLval === -1 ? '∞ (forever)' : jvmTTLval + 's';
+
+  const jvmPct = jvmTTLval === -1 ? 100 : Math.max(0, (1 - ttl.jvmAge / jvmTTLval) * 100);
+  document.getElementById('jvmBar').style.width = Math.max(0, jvmPct) + '%';
+  document.getElementById('jvmBar').style.background = jvmPct < 20 ? '#ff4c4c' : '#ffb74d';
+
+  const jvmConn = document.getElementById('jvmConn');
+  jvmConn.className = 'conn-status ' + (ttl.jvmConnected ? 'ok' : 'err');
+  jvmConn.textContent = ttl.jvmConnected ? '✓ Connected to Redis (' + ttl.jvmCachedIP + ')' : '✗ Connection refused — IP ' + ttl.jvmCachedIP + ' is the old master';
+
+  const nettyIPel = document.getElementById('nettyIP');
+  nettyIPel.textContent = ttl.nettyCachedIP;
+  nettyIPel.className = 'vv' + (ttl.failover && ttl.nettyCachedIP !== ttl.newIP ? ' stale' : ' fresh');
+  document.getElementById('nettyTtlDisp').textContent = ttl.nettyTTLRem.toFixed(1) + 's';
+
+  const nettyPct = Math.max(0, (ttl.nettyTTLRem / ttl.dnsTTL) * 100);
+  document.getElementById('nettyBar').style.width = nettyPct + '%';
+
+  const nettyConn = document.getElementById('nettyConn');
+  nettyConn.className = 'conn-status ' + (ttl.nettyConnected ? 'ok' : 'err');
+  nettyConn.textContent = ttl.nettyConnected ? '✓ Connected to Redis (' + ttl.nettyCachedIP + ')' : '✗ Connection refused — IP ' + ttl.nettyCachedIP + ' is the old master';
+
+  document.getElementById('dnsCountdown').textContent = ttl.dnsCountdown.toFixed(1);
+}
+
+function ttlTick() {
+  if (!ttl.running) return;
+  const now = performance.now();
+  const realDt = Math.min((now - ttl.lastT) / 1000, 0.1);
+  ttl.lastT = now;
+  const dt = realDt * ttl.speed;
+  ttl.elapsed += dt;
+
+  // DNS countdown cycles
+  ttl.dnsCountdown -= dt;
+  if (ttl.dnsCountdown <= 0) ttl.dnsCountdown += ttl.dnsTTL;
+
+  if (ttl.failover) {
+    // JVM cache aging
+    ttl.jvmAge += dt;
+    if (ttl.jvmTTL !== -1 && ttl.jvmAge >= ttl.jvmTTL) {
+      if (ttl.jvmCachedIP !== ttl.dnsIP) {
+        ttl.jvmCachedIP = ttl.dnsIP;
+        ttl.jvmConnected = true;
+        ttl.jvmAge = 0;
+        ttlLog('JVM cache expired — re-resolved → ' + ttl.dnsIP + ' ✓ reconnected', 'l-jvm');
+      } else {
+        ttl.jvmAge = 0;
+      }
+    } else if (ttl.jvmCachedIP !== ttl.dnsIP) {
+      ttl.jvmConnected = false;
+    }
+
+    // Netty TTL countdown
+    ttl.nettyTTLRem -= dt;
+    if (ttl.nettyTTLRem <= 0) {
+      ttl.nettyCachedIP = ttl.dnsIP;
+      ttl.nettyTTLRem = ttl.dnsTTL;
+      ttl.nettyConnected = true;
+      ttlLog('Netty DNS TTL expired → re-resolved → ' + ttl.dnsIP + ' ✓ reconnected', 'l-netty');
+    } else if (ttl.nettyCachedIP !== ttl.dnsIP) {
+      ttl.nettyConnected = false;
+    }
+  }
+
+  renderTTL();
+  setTimeout(ttlTick, 60);
+}
+
+document.getElementById('rngSpeed').oninput = e => { ttl.speed = parseInt(e.target.value); document.getElementById('vSpeed').textContent = ttl.speed; };
+document.getElementById('selJvmTtl').onchange = e => ttl.jvmTTL = parseInt(e.target.value);
+document.getElementById('selDnsTtl').onchange = e => { ttl.dnsTTL = parseInt(e.target.value); ttl.nettyTTLRem = ttl.dnsTTL; ttl.dnsCountdown = ttl.dnsTTL; document.getElementById('dnsRecordTTL').textContent = ttl.dnsTTL; renderTTL(); };
+document.getElementById('btnTtlStart').onclick = () => {
+  ttl.running = true;
+  ttl.lastT = performance.now();
+  ttl.dnsTTL = parseInt(document.getElementById('selDnsTtl').value);
+  ttl.jvmTTL = parseInt(document.getElementById('selJvmTtl').value);
+  ttl.nettyTTLRem = ttl.dnsTTL;
+  document.getElementById('btnFailover').disabled = false;
+  document.getElementById('btnTtlStart').disabled = true;
+  ttlLog('Simulation started — trigger a failover to see the difference', 'l-info');
+  ttlTick();
+};
+document.getElementById('btnFailover').onclick = () => {
+  ttl.failover = true;
+  ttl.dnsIP = ttl.newIP;
+  const el = document.getElementById('dnsRecordIP');
+  el.textContent = ttl.newIP;
+  el.className = 'dns-record-ip changed';
+  document.getElementById('dnsStatus').textContent = '⚡ FAILOVER — IP changed';
+  ttlLog('FAILOVER: DNS record updated → ' + ttl.newIP + ' (TTL=' + ttl.dnsTTL + 's)', 'l-dns');
+  ttlLog('JVM still holds ' + ttl.jvmCachedIP + ' — waiting for its TTL (' + (ttl.jvmTTL === -1 ? '∞' : ttl.jvmTTL + 's') + ') to expire', 'l-jvm');
+  ttlLog('Netty countdown: ' + ttl.nettyTTLRem.toFixed(1) + 's until re-resolve', 'l-netty');
+  document.getElementById('btnFailover').disabled = true;
+};
+document.getElementById('btnTtlReset').onclick = () => {
+  document.getElementById('btnTtlStart').disabled = false;
+  document.getElementById('btnFailover').disabled = true;
+  resetTtlState();
+};
+resetTtlState();
+
+// =================== SECTION 3: EKS DNS FLOW ===================
+function dnsTypeChanged() {
+  const t = document.getElementById('selDnsType').value;
+  const examples = {
+    external: 'my-redis.abc123.ng.0001.euw1.cache.amazonaws.com',
+    cluster:  'redis-master.redis.svc.cluster.local.',
+    private:  'redis.internal.mycompany.com',
+  };
+  document.getElementById('dnsHostInput').value = examples[t];
+}
+
+function setDnsNode(id, state, result = '') {
+  const n = document.getElementById('dn-' + id);
+  n.className = 'dns-node ' + state;
+  if (result) document.getElementById('dn-' + id + '-r').textContent = result;
+}
+
+function resetDnsFlow() {
+  ['pod','hosts','coredns','vpcdns','route53'].forEach(id => setDnsNode(id, '', ''));
+  ['dc-1','dc-2','dc-3','dc-4'].forEach(id => document.getElementById(id).className = 'dns-connector');
+  document.getElementById('dnsLog').innerHTML = '<div class="l-info">Press ▶ Resolve to trace the query.</div>';
+  document.getElementById('btnDnsResolve').disabled = false;
+}
+
+function dnsLogAdd(msg, cls = 'l-info') {
+  const el = document.getElementById('dnsLog');
+  const d = document.createElement('div');
+  d.className = cls;
+  d.textContent = msg;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function runDnsFlow() {
+  document.getElementById('btnDnsResolve').disabled = true;
+  resetDnsFlow();
+  const hostname = document.getElementById('dnsHostInput').value.trim();
+  const type = document.getElementById('selDnsType').value;
+
+  dnsLogAdd(`Resolving: ${hostname}`);
+  setDnsNode('pod', 'querying', '');
+  await sleep(400);
+
+  // /etc/hosts
+  activateConnector('dc-1');
+  setDnsNode('hosts', 'querying');
+  await sleep(500);
+  setDnsNode('pod', '');
+  setDnsNode('hosts', 'miss', 'MISS — not in /etc/hosts');
+  dnsLogAdd('/etc/hosts → MISS (only loopback / node entries here)', 'l-err');
+  await sleep(400);
+
+  // CoreDNS
+  activateConnector('dc-2');
+  setDnsNode('coredns', 'querying');
+  await sleep(600);
+  if (type === 'cluster') {
+    setDnsNode('coredns', 'hit', `HIT → ${hostname.replace(/\.$/, '')} → 10.96.4.22 (ClusterIP)`);
+    dnsLogAdd('CoreDNS → HIT (in-cluster service — ClusterIP: 10.96.4.22)', 'l-netty');
+    dnsLogAdd('Response returned to pod. Done in 2 hops.', 'l-netty');
+    setDnsNode('pod', 'hit', 'Resolved: 10.96.4.22');
+    document.getElementById('btnDnsResolve').disabled = false;
+    return;
+  }
+  setDnsNode('coredns', 'miss', 'MISS — not an in-cluster service, forwarding upstream');
+  dnsLogAdd('CoreDNS → MISS (not a cluster service), forwarding to VPC DNS', 'l-err');
+  await sleep(400);
+
+  // VPC DNS
+  activateConnector('dc-3');
+  setDnsNode('vpcdns', 'querying');
+  await sleep(600);
+  if (type === 'private') {
+    setDnsNode('vpcdns', 'hit', 'HIT → Route 53 private hosted zone → 10.0.5.12');
+    dnsLogAdd('VPC DNS → HIT in Route 53 private hosted zone (10.0.5.12)', 'l-netty');
+    dnsLogAdd('Response returned. Done in 3 hops.', 'l-netty');
+    setDnsNode('pod', 'hit', 'Resolved: 10.0.5.12');
+    document.getElementById('btnDnsResolve').disabled = false;
+    return;
+  }
+  setDnsNode('vpcdns', 'miss', 'MISS — not in private hosted zone, forwarding to Route 53 public');
+  dnsLogAdd('VPC DNS → MISS (no private zone match), forwarding to Route 53 public', 'l-err');
+  await sleep(400);
+
+  // Route 53 public
+  activateConnector('dc-4');
+  setDnsNode('route53', 'querying');
+  await sleep(700);
+  setDnsNode('route53', 'hit', 'HIT — authoritative for *.cache.amazonaws.com → 10.0.1.5, TTL=5s');
+  dnsLogAdd('Route 53 → HIT. Returns A record: 10.0.1.5 TTL=5s', 'l-netty');
+  dnsLogAdd('Response propagates back: Route53 → VPC DNS → CoreDNS (cached 5s) → Pod', 'l-netty');
+  dnsLogAdd('Total hops: 4. CoreDNS will cache this for up to 5s.', 'l-info');
+  setDnsNode('pod', 'hit', 'Resolved: 10.0.1.5 (TTL=5s)');
+  document.getElementById('btnDnsResolve').disabled = false;
+}
+
+function activateConnector(id) {
+  document.getElementById(id).className = 'dns-connector active';
+}
+
+// =================== SECTION 4: FQDN ===================
+async function runFqdnDemo() {
+  const host = document.getElementById('fqdnInput').value.trim() || 'redis-master';
+  const ndots = parseInt(document.getElementById('selNdots').value);
+  const ns = document.getElementById('nsInput').value.trim() || 'redis';
+  const cluster = document.getElementById('rcCluster').value.trim() || 'cluster.local';
+  const region = document.getElementById('rcRegion').value.trim() || 'eu-west-1.compute.internal';
+
+  clearFqdn();
+  const dots = (host.match(/\./g) || []).length;
+  const fqdn = `${host}.${ns}.svc.${cluster}.`;
+
+  // Non-FQDN terminal
+  const nt = document.getElementById('termNonFqdn');
+  nt.innerHTML = '';
+
+  const addLine = async (termId, html, delay = 0) => {
+    await sleep(delay);
+    const t = document.getElementById(termId);
+    const d = document.createElement('div');
+    d.className = 'term-line';
+    d.innerHTML = html;
+    t.appendChild(d);
+    t.scrollTop = t.scrollHeight;
+  };
+
+  const baseLatency = 12; // ms per query
+
+  if (dots < ndots) {
+    // Search domain expansion
+    await addLine('termNonFqdn', `<span class="term-prompt">$ resolve </span><span class="term-query">${host}</span> <span class="term-comment">(${dots} dot${dots!==1?'s':''} &lt; ndots=${ndots} → try search domains first)</span>`);
+    const searches = [
+      `${host}.${ns}.svc.${cluster}`,
+      `${host}.svc.${cluster}`,
+      `${host}.${cluster}`,
+      `${host}.${region}`,
+      host,
+    ];
+    let totalMs = 0;
+    for (let i = 0; i < searches.length; i++) {
+      const q = searches[i];
+      const isLast = i === searches.length - 1;
+      const lat = isLast ? baseLatency : baseLatency + Math.floor(Math.random() * 8);
+      totalMs += lat;
+      await addLine('termNonFqdn', `<span class="term-comment">${i+1}.</span> <span class="term-query">QUERY ${q}</span>`, 280);
+      await sleep(300);
+      if (isLast) {
+        await addLine('termNonFqdn', `   <span class="term-ok">→ A 10.96.4.22</span> <span class="term-latency">(${lat}ms)</span> ✓`);
+      } else {
+        await addLine('termNonFqdn', `   <span class="term-fail">→ NXDOMAIN</span> <span class="term-latency">(${lat}ms)</span>`);
+      }
+    }
+    document.getElementById('totalNonFqdn').style.display = 'block';
+    document.getElementById('totalNonFqdn').innerHTML = `<span style="color:#ff4c4c;">Total: ${totalMs}ms, ${searches.length} queries</span>`;
+  } else {
+    await addLine('termNonFqdn', `<span class="term-prompt">$ resolve </span><span class="term-query">${host}</span> <span class="term-comment">(${dots} dots ≥ ndots=${ndots} → treated as absolute)</span>`);
+    await sleep(200);
+    const lat = baseLatency + Math.floor(Math.random() * 5);
+    await addLine('termNonFqdn', `<span class="term-comment">1.</span> <span class="term-query">QUERY ${host}.</span>`);
+    await sleep(300);
+    await addLine('termNonFqdn', `   <span class="term-ok">→ A 10.0.1.5</span> <span class="term-latency">(${lat}ms)</span> ✓`);
+    document.getElementById('totalNonFqdn').style.display = 'block';
+    document.getElementById('totalNonFqdn').innerHTML = `<span style="color:#6db33f;">Total: ${lat}ms, 1 query (enough dots to skip search domains)</span>`;
+  }
+
+  // FQDN terminal — single query, direct
+  await addLine('termFqdn', `<span class="term-prompt">$ resolve </span><span class="term-query">${fqdn}</span> <span class="term-comment">(FQDN — trailing dot = absolute)</span>`);
+  await sleep(180);
+  const lat2 = baseLatency;
+  await addLine('termFqdn', `<span class="term-comment">1.</span> <span class="term-query">QUERY ${fqdn}</span>`, 100);
+  await sleep(280);
+  await addLine('termFqdn', `   <span class="term-ok">→ A 10.96.4.22</span> <span class="term-latency">(${lat2}ms)</span> ✓`);
+  document.getElementById('totalFqdn').style.display = 'block';
+  document.getElementById('totalFqdn').innerHTML = `<span style="color:#6db33f;">Total: ${lat2}ms, 1 query</span>`;
+}
+
+function clearFqdn() {
+  document.getElementById('termNonFqdn').innerHTML = '<div class="term-line term-comment"># ready</div>';
+  document.getElementById('termFqdn').innerHTML = '<div class="term-line term-comment"># ready</div>';
+  document.getElementById('totalNonFqdn').style.display = 'none';
+  document.getElementById('totalFqdn').style.display = 'none';
+}
+
+// =================== SECTION 5: resolv.conf ===================
+function updateResolvConf() {
+  const ndots = document.getElementById('rcNdots').value;
+  const ns = document.getElementById('rcNs').value || 'redis';
+  const cluster = document.getElementById('rcCluster').value || 'cluster.local';
+  const region = document.getElementById('rcRegion').value || 'eu-west-1.compute.internal';
+  // Sync ndots selects
+  document.getElementById('selNdots').value = ndots;
+  document.getElementById('rcNdots').value = ndots;
+  document.getElementById('rcNdotsHint').textContent = ndots;
+  document.getElementById('resolvConf').innerHTML = [
+    `<span class="rc-comment"># /etc/resolv.conf — auto-injected by EKS into every pod</span>`,
+    ``,
+    `<span class="rc-key">nameserver</span> <span class="rc-val">10.96.0.10</span>   <span class="rc-annotation">← CoreDNS ClusterIP (kube-dns service)</span>`,
+    `<span class="rc-key">search</span>     <span class="rc-val">${ns}.svc.${cluster}</span>`,
+    `           <span class="rc-val">svc.${cluster}</span>`,
+    `           <span class="rc-val">${cluster}</span>`,
+    `           <span class="rc-val">${region}</span>   <span class="rc-annotation">← AWS region internal domain</span>`,
+    `<span class="rc-key">options</span>    <span class="rc-highlight">ndots:${ndots}</span>   <span class="rc-annotation">← if hostname has &lt; ${ndots} dots, try search list first</span>`,
+  ].join('<br>');
+}
+updateResolvConf();
+</script>
+</body>
+</html>

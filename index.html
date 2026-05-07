@@ -93,6 +93,9 @@ header p {
 .card-spring::before { background: linear-gradient(90deg, #6db33f, #ffb74d); }
 .card-spring:hover { border-color: #6db33f; }
 
+.card-dns::before { background: linear-gradient(90deg, #48dbfb, #b388ff); }
+.card-dns:hover { border-color: #48dbfb; }
+
 .card-icon {
   font-size: 2.4rem;
   margin-bottom: 16px;
@@ -200,6 +203,19 @@ footer {
       <span class="tag">Sharding</span>
       <span class="tag">Replication</span>
       <span class="tag">Failover</span>
+    </div>
+  </a>
+
+  <a href="lettuce-dns-explainer.html" class="card card-dns">
+    <span class="card-arrow">&rarr;</span>
+    <span class="card-icon">🔍</span>
+    <h2>Lettuce DNS Resolution</h2>
+    <p>JVM vs Netty DNS resolver — blocking vs async, TTL caching, EKS CoreDNS flow, and the FQDN/ndots query explosion. All interactive.</p>
+    <div class="card-tags">
+      <span class="tag">Lettuce</span>
+      <span class="tag">DNS</span>
+      <span class="tag">EKS</span>
+      <span class="tag">CoreDNS</span>
     </div>
   </a>
 
