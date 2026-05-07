@@ -236,6 +236,18 @@ label { font-size: 11px; color: #aaa; }
 .ref-section code, .ref-section pre { background: #0a0a1a; padding: 1px 5px; border-radius: 3px; color: #ffb74d; font-size: 11px; font-family: monospace; }
 .ref-section pre { padding: 10px; display: block; white-space: pre; overflow-x: auto; line-height: 1.6; }
 
+/* ---- overview ---- */
+.ov-pod { background: #1a2a4a; border: 2px solid #2a3a5e; border-radius: 8px; padding: 8px 12px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; color: #c8d0e0; }
+.ov-pod:hover { border-color: #a78bfa; background: #2a1a4e; }
+.ov-pod.selected { border-color: #a78bfa; background: #2a1a4e; box-shadow: 0 0 10px rgba(167,139,250,0.3); }
+.ov-access-panel { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 12px; min-height: 80px; font-size: 11px; }
+.ov-service { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid #1a2a4a; }
+.ov-service:last-child { border-bottom: none; }
+.ov-service .svc-name { color: #c8d0e0; min-width: 140px; }
+.ov-service .svc-allow { padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; }
+.ov-service .svc-allow.yes { background: #0a2a1a; color: #6db33f; }
+.ov-service .svc-allow.no  { background: #2a0a0a; color: #ff4c4c; }
+
 .warn-box { background: #2d1010; border: 1px solid #ff4c4c; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #ffcccc; line-height: 1.6; margin-bottom: 12px; }
 .warn-box strong { color: #ff4c4c; }
 .info-box { background: #0d1b2a; border: 1px solid #a78bfa; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #ddd0ff; line-height: 1.6; margin-bottom: 12px; }
@@ -249,6 +261,52 @@ label { font-size: 11px; color: #aaa; }
 </div>
 <h1>IRSA on EKS</h1>
 <p class="subtitle">IAM Roles for Service Accounts &middot; OIDC trust &middot; Token exchange &middot; All interactive</p>
+
+<!-- =================== OVERVIEW =================== -->
+<div class="section">
+  <div class="section-title">Why IRSA? <span class="badge">before vs after</span></div>
+  <div class="section-sub">
+    Click a pod to see what AWS services it can reach. Before IRSA, every pod on the node shared the EC2 instance role — one breach meant full access to everything. IRSA gives each pod its own scoped IAM role.
+  </div>
+  <div class="grid2">
+
+    <!-- WITHOUT IRSA -->
+    <div class="panel" style="border-color:#ff4c4c;">
+      <div style="font-size:13px; font-weight:700; color:#ff4c4c; margin-bottom:12px;">❌ Before IRSA — shared EC2 instance role</div>
+      <div style="background:#0d1b2a; border-radius:8px; padding:12px; margin-bottom:12px;">
+        <div style="font-size:10px; color:#888; margin-bottom:8px; text-transform:uppercase; letter-spacing:.5px;">EC2 Node (single IAM role for everything)</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;" id="beforePods">
+          <div class="ov-pod" onclick="selectPod('before','billing')" data-pod="billing">💳 billing-svc</div>
+          <div class="ov-pod" onclick="selectPod('before','frontend')" data-pod="frontend">🖥 frontend</div>
+          <div class="ov-pod" onclick="selectPod('before','analytics')" data-pod="analytics">📊 analytics</div>
+        </div>
+      </div>
+      <div id="beforeAccess" class="ov-access-panel">
+        <div style="font-size:11px; color:#888;">← click a pod to see its access</div>
+      </div>
+    </div>
+
+    <!-- WITH IRSA -->
+    <div class="panel" style="border-color:#6db33f;">
+      <div style="font-size:13px; font-weight:700; color:#6db33f; margin-bottom:12px;">✅ With IRSA — each pod gets its own role</div>
+      <div style="background:#0d1b2a; border-radius:8px; padding:12px; margin-bottom:12px;">
+        <div style="font-size:10px; color:#888; margin-bottom:8px; text-transform:uppercase; letter-spacing:.5px;">EKS Node (pod-level IAM via OIDC)</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;" id="afterPods">
+          <div class="ov-pod" onclick="selectPod('after','billing')" data-pod="billing">💳 billing-svc</div>
+          <div class="ov-pod" onclick="selectPod('after','frontend')" data-pod="frontend">🖥 frontend</div>
+          <div class="ov-pod" onclick="selectPod('after','analytics')" data-pod="analytics">📊 analytics</div>
+        </div>
+      </div>
+      <div id="afterAccess" class="ov-access-panel">
+        <div style="font-size:11px; color:#888;">← click a pod to see its access</div>
+      </div>
+    </div>
+
+  </div>
+  <div style="background:#16213e; border:1px solid #2a3a5e; border-radius:8px; padding:12px 16px; margin-top:12px; font-size:12px; color:#c8d0e0; line-height:1.7;">
+    <strong style="color:#a78bfa;">The core problem IRSA solves:</strong> In the pre-IRSA world, pods called the EC2 Instance Metadata Service (IMDS) to get temporary credentials — but those credentials belonged to the <em>node's</em> IAM role, shared by all pods. A single vulnerable pod could read S3 buckets, DynamoDB tables, or Secrets Manager entries it had no business touching. IRSA introduces <strong>pod-level identity</strong>: each ServiceAccount maps to its own IAM role via OIDC, so a compromised pod can only reach what its specific role allows.
+  </div>
+</div>
 
 <!-- =================== SCENARIO PRESETS =================== -->
 <div class="presets-row">
@@ -1357,6 +1415,38 @@ function wireInputs() {
     S.flowSpeed = parseFloat(speed.value);
     document.getElementById('vSpeed').textContent = S.flowSpeed.toFixed(1) + '×';
   });
+}
+
+// =================== OVERVIEW ===================
+const OV_DATA = {
+  before: {
+    billing:   [{ s: 'DynamoDB (billing table)', a: true }, { s: 'S3 (any bucket)', a: true }, { s: 'Secrets Manager (all)', a: true }, { s: 'EC2 describe instances', a: true }],
+    frontend:  [{ s: 'DynamoDB (billing table)', a: true }, { s: 'S3 (any bucket)', a: true }, { s: 'Secrets Manager (all)', a: true }, { s: 'EC2 describe instances', a: true }],
+    analytics: [{ s: 'DynamoDB (billing table)', a: true }, { s: 'S3 (any bucket)', a: true }, { s: 'Secrets Manager (all)', a: true }, { s: 'EC2 describe instances', a: true }],
+  },
+  after: {
+    billing:   [{ s: 'DynamoDB (billing table)', a: true }, { s: 'S3 (any bucket)', a: false }, { s: 'Secrets Manager (all)', a: false }, { s: 'EC2 describe instances', a: false }],
+    frontend:  [{ s: 'DynamoDB (billing table)', a: false }, { s: 'S3 (frontend-assets only)', a: true }, { s: 'Secrets Manager (all)', a: false }, { s: 'EC2 describe instances', a: false }],
+    analytics: [{ s: 'DynamoDB (billing table)', a: false }, { s: 'S3 (reports bucket only)', a: true }, { s: 'Secrets Manager (all)', a: false }, { s: 'EC2 describe instances', a: false }],
+  },
+};
+const OV_ROLES = {
+  billing:   { before: 'NodeInstanceRole (full)', after: 'BillingDynamoDBRole (scoped)' },
+  frontend:  { before: 'NodeInstanceRole (full)', after: 'FrontendS3Role (scoped)' },
+  analytics: { before: 'NodeInstanceRole (full)', after: 'AnalyticsS3Role (scoped)' },
+};
+
+function selectPod(side, pod) {
+  document.querySelectorAll(`#${side}Pods .ov-pod`).forEach(el => el.classList.remove('selected'));
+  document.querySelector(`#${side}Pods [data-pod="${pod}"]`).classList.add('selected');
+  const services = OV_DATA[side][pod];
+  const role = OV_ROLES[pod][side];
+  const roleColor = side === 'before' ? '#ff4c4c' : '#6db33f';
+  let html = `<div style="font-size:10px; color:#888; margin-bottom:8px;">IAM Role: <span style="color:${roleColor}; font-weight:700; font-family:monospace;">${role}</span></div>`;
+  for (const svc of services) {
+    html += `<div class="ov-service"><span class="svc-name">${svc.s}</span><span class="svc-allow ${svc.a ? 'yes' : 'no'}">${svc.a ? 'ALLOW' : 'DENY'}</span></div>`;
+  }
+  document.getElementById(`${side}Access`).innerHTML = html;
 }
 
 // =================== INIT ===================
