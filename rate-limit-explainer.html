@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AWS API Gateway — Rate Limit Simulator</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=IBM+Plex+Mono:wght@400;600&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0c0f1a;
+  --surface: #151929;
+  --surface2: #1c2238;
+  --accent: #00e5a0;
+  --accent2: #00b8d4;
+  --danger: #ff4d6a;
+  --warn: #ffb74d;
+  --text: #e8eaf6;
+  --text-dim: #7986a8;
+  --border: #2a3150;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Outfit', sans-serif;
+  overflow-x: hidden;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 24px;
+}
+
+h1 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 2.6rem;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 8px;
+  animation: fadeSlideIn 0.6s ease-out;
+}
+
+.subtitle {
+  font-size: 1.1rem;
+  color: var(--text-dim);
+  margin-bottom: 40px;
+  font-weight: 300;
+  animation: fadeSlideIn 0.8s ease-out;
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Config Panel */
+.config-panel {
+  background: linear-gradient(135deg, rgba(0, 229, 160, 0.08), rgba(0, 184, 212, 0.08));
+  border: 2px solid var(--accent);
+  border-radius: 16px;
+  padding: 32px;
+  margin-bottom: 40px;
+  animation: fadeSlideIn 0.5s ease-out;
+}
+
+.config-panel h2 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.5rem;
+  margin-bottom: 6px;
+}
+
+.config-panel .desc {
+  color: var(--text-dim);
+  font-weight: 300;
+  margin-bottom: 24px;
+  font-size: 0.95rem;
+}
+
+.config-row {
+  display: flex;
+  gap: 24px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.config-field {
+  flex: 1;
+  min-width: 180px;
+}
+
+.config-field label {
+  display: block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.config-field input {
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1.4rem;
+  font-weight: 600;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+
+.config-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.config-apply {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.9rem;
+  padding: 14px 32px;
+  border: 2px solid var(--accent);
+  background: rgba(0, 229, 160, 0.15);
+  color: var(--accent);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.config-apply:hover {
+  background: rgba(0, 229, 160, 0.3);
+  transform: translateY(-1px);
+}
+
+.config-status {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--accent);
+  margin-top: 16px;
+  min-height: 1.4em;
+}
+
+.burst-hint {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--warn);
+  margin-top: 12px;
+  min-height: 1.2em;
+}
+
+/* Grid */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  margin-bottom: 48px;
+}
+
+@media (max-width: 800px) {
+  .grid { grid-template-columns: 1fr; }
+  h1 { font-size: 2rem; }
+  .config-row { flex-direction: column; }
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px;
+  animation: fadeSlideIn 0.6s ease-out both;
+}
+
+.card:nth-child(2) { animation-delay: 0.1s; }
+.card:nth-child(3) { animation-delay: 0.2s; }
+.card:nth-child(4) { animation-delay: 0.3s; }
+
+.card h2 {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--accent);
+  margin-bottom: 16px;
+}
+
+.card h3 {
+  font-size: 1.4rem;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.card p {
+  color: var(--text-dim);
+  line-height: 1.7;
+  font-weight: 300;
+}
+
+.stat {
+  font-family: 'DM Serif Display', serif;
+  font-size: 3rem;
+  color: var(--accent);
+  margin: 8px 0;
+}
+
+.stat-unit {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
+
+/* Bucket Visualization */
+.bucket-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 40px;
+  margin-bottom: 48px;
+}
+
+.bucket-section h2 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.8rem;
+  margin-bottom: 8px;
+}
+
+.bucket-section .desc {
+  color: var(--text-dim);
+  margin-bottom: 32px;
+  font-weight: 300;
+}
+
+.bucket-vis {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 60px;
+  margin-bottom: 32px;
+  flex-wrap: wrap;
+}
+
+.bucket-container {
+  position: relative;
+  width: 180px;
+  text-align: center;
+}
+
+.bucket {
+  width: 180px;
+  height: 280px;
+  border: 3px solid var(--accent);
+  border-top: none;
+  border-radius: 0 0 20px 20px;
+  position: relative;
+  overflow: hidden;
+  background: rgba(0, 229, 160, 0.03);
+}
+
+.bucket-water {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0, 229, 160, 0.4), rgba(0, 184, 212, 0.2));
+  transition: height 0.5s ease;
+  border-radius: 0 0 17px 17px;
+}
+
+.bucket-water::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--accent);
+  opacity: 0.6;
+}
+
+.bucket-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1.8rem;
+  font-weight: 600;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+
+.bucket-max {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  position: absolute;
+  top: -4px;
+  right: -65px;
+  white-space: nowrap;
+}
+
+.bucket-zero {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  position: absolute;
+  bottom: 4px;
+  right: -30px;
+}
+
+.bucket-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.85rem;
+  color: var(--accent);
+  margin-top: 16px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Controls */
+.controls {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.btn {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.82rem;
+  padding: 10px 20px;
+  border: 2px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 0.5px;
+}
+
+.btn:hover {
+  border-color: var(--accent);
+  background: rgba(0, 229, 160, 0.1);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.btn.danger:hover {
+  border-color: var(--danger);
+  background: rgba(255, 77, 106, 0.1);
+  color: var(--danger);
+}
+
+.custom-send {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.custom-send input {
+  width: 100px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.custom-send input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Log */
+.log-container {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+  line-height: 1.8;
+}
+
+.log-entry { opacity: 0; animation: logIn 0.3s ease forwards; }
+@keyframes logIn { to { opacity: 1; } }
+
+.log-ok { color: var(--accent); }
+.log-reject { color: var(--danger); }
+.log-refill { color: var(--accent2); }
+.log-info { color: var(--text-dim); }
+
+/* Timeline */
+.timeline-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 40px;
+  margin-bottom: 48px;
+}
+
+.timeline-section h2 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.8rem;
+  margin-bottom: 8px;
+}
+
+.timeline-section .desc {
+  color: var(--text-dim);
+  margin-bottom: 32px;
+  font-weight: 300;
+}
+
+canvas#timeline {
+  width: 100%;
+  height: 300px;
+  border-radius: 8px;
+}
+
+.scenario-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.scenario-tab {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.78rem;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.scenario-tab:hover { border-color: var(--accent2); color: var(--text); }
+.scenario-tab.active { border-color: var(--accent2); background: rgba(0, 184, 212, 0.12); color: var(--accent2); }
+
+/* Summary boxes */
+.summary-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.summary-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+}
+
+.summary-box .label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.summary-box .value {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.8rem;
+}
+
+.summary-box .value.green { color: var(--accent); }
+.summary-box .value.red { color: var(--danger); }
+.summary-box .value.blue { color: var(--accent2); }
+
+.pipe-arrow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.pipe-arrow .arrow {
+  font-size: 2rem;
+  color: var(--accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.pipe-arrow .label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>AWS API Gateway — Rate Limit Simulator</h1>
+  <p class="subtitle">Configure <code style="color:var(--accent)">throttling_rate_limit</code> and <code style="color:var(--accent)">throttling_burst_limit</code>, then simulate traffic</p>
+
+  <!-- Configurable Settings -->
+  <div class="config-panel">
+    <h2>Gateway Configuration</h2>
+    <p class="desc">Set your API Gateway throttling values. Click "Apply" to update the entire simulation.</p>
+    <div class="config-row">
+      <div class="config-field">
+        <label>throttling_rate_limit (req/s)</label>
+        <input type="number" id="cfgRate" value="50" min="1" max="10000">
+      </div>
+      <div class="config-field">
+        <label>throttling_burst_limit (max tokens)</label>
+        <input type="number" id="cfgBurst" value="100" min="1" max="10000">
+      </div>
+      <button class="config-apply" onclick="applyConfig()">Apply &amp; Reset</button>
+    </div>
+    <div class="burst-hint" id="burstHint"></div>
+    <div class="config-status" id="configStatus"></div>
+  </div>
+
+  <!-- Key Concepts (dynamic) -->
+  <div class="grid" id="conceptGrid"></div>
+
+  <!-- Interactive Bucket -->
+  <div class="bucket-section">
+    <h2>Interactive Token Bucket</h2>
+    <p class="desc">Click buttons to simulate requests and see how the bucket behaves in real time. Tokens refill every second.</p>
+
+    <div class="bucket-vis">
+      <div style="text-align: center;">
+        <div style="font-family: 'IBM Plex Mono'; font-size: 0.8rem; color: var(--text-dim); margin-bottom: 8px;">INCOMING REQUESTS</div>
+        <div id="reqCounter" style="font-family: 'DM Serif Display'; font-size: 2.5rem; color: var(--warn);">0</div>
+      </div>
+
+      <div class="pipe-arrow">
+        <div class="arrow">&rarr;</div>
+        <div class="label">consume token</div>
+      </div>
+
+      <div class="bucket-container">
+        <div class="bucket">
+          <div class="bucket-water" id="bucketWater" style="height: 100%;"></div>
+          <div class="bucket-label" id="bucketLabel">100</div>
+          <div class="bucket-max" id="bucketMaxLabel">&larr; 100 max</div>
+          <div class="bucket-zero">&larr; 0</div>
+        </div>
+        <div class="bucket-title">Token Bucket</div>
+      </div>
+
+      <div class="pipe-arrow">
+        <div class="arrow">&larr;</div>
+        <div class="label" id="refillLabel">+50 tokens/sec</div>
+      </div>
+
+      <div style="text-align: center;">
+        <div style="font-family: 'IBM Plex Mono'; font-size: 0.8rem; color: var(--text-dim); margin-bottom: 8px;">REFILL POOL</div>
+        <div style="font-family: 'DM Serif Display'; font-size: 2.5rem; color: var(--accent2);">&infin;</div>
+      </div>
+    </div>
+
+    <div class="custom-send">
+      <span style="font-family:'IBM Plex Mono'; font-size:0.8rem; color:var(--text-dim);">Custom:</span>
+      <input type="number" id="customCount" value="25" min="1">
+      <button class="btn" onclick="sendRequest(parseInt(document.getElementById('customCount').value)||1)">Send Custom</button>
+    </div>
+
+    <div class="controls" id="dynamicButtons"></div>
+
+    <div class="summary-row" style="margin-bottom: 20px;">
+      <div class="summary-box">
+        <div class="label">Tokens Available</div>
+        <div class="value green" id="tokensAvail">100</div>
+      </div>
+      <div class="summary-box">
+        <div class="label">Accepted</div>
+        <div class="value green" id="acceptedCount">0</div>
+      </div>
+      <div class="summary-box">
+        <div class="label">Rejected (429)</div>
+        <div class="value red" id="rejectedCount">0</div>
+      </div>
+      <div class="summary-box">
+        <div class="label">Total Sent</div>
+        <div class="value blue" id="totalCount">0</div>
+      </div>
+    </div>
+
+    <div class="log-container" id="logContainer"></div>
+  </div>
+
+  <!-- Timeline Scenarios -->
+  <div class="timeline-section">
+    <h2>Visual Timeline Scenarios</h2>
+    <p class="desc">See how tokens deplete and refill over time under different traffic patterns with your configured rate/burst.</p>
+
+    <div class="scenario-tabs" id="scenarioTabs"></div>
+
+    <canvas id="timeline"></canvas>
+
+    <div class="summary-row" id="scenarioSummary"></div>
+  </div>
+
+</div>
+
+<script>
+let RATE = 50;
+let BURST = 100;
+let tokens = BURST;
+let accepted = 0;
+let rejected = 0;
+let totalSent = 0;
+let refillTimer = null;
+
+function applyConfig() {
+  const r = parseInt(document.getElementById('cfgRate').value);
+  const b = parseInt(document.getElementById('cfgBurst').value);
+  if (!r || r < 1 || !b || b < 1) {
+    document.getElementById('configStatus').textContent = 'Invalid values. Both must be >= 1.';
+    document.getElementById('configStatus').style.color = 'var(--danger)';
+    return;
+  }
+  RATE = r;
+  BURST = b;
+  tokens = BURST;
+  accepted = 0;
+  rejected = 0;
+  totalSent = 0;
+
+  const hasBurst = BURST > RATE;
+  const hint = document.getElementById('burstHint');
+  if (BURST === RATE) {
+    hint.textContent = 'burst = rate \u2192 No burst behavior. Flat cap at ' + RATE + ' req/s.';
+  } else if (BURST > RATE) {
+    hint.textContent = 'burst > rate \u2192 Can spike to ' + BURST + ' instantly, then sustain ' + RATE + '/s.';
+  } else {
+    hint.textContent = 'burst < rate \u2192 Bucket smaller than refill. Max instant = ' + BURST + ', sustained = ' + RATE + '/s.';
+  }
+
+  document.getElementById('configStatus').style.color = 'var(--accent)';
+  document.getElementById('configStatus').textContent = 'Applied: rate=' + RATE + ' req/s, burst=' + BURST + ' tokens. Simulation reset.';
+
+  renderConceptCards();
+  renderDynamicButtons();
+  updateBucketUI();
+  renderScenarioTabs();
+  drawScenario(currentScenario);
+  startRefillTimer();
+  document.getElementById('logContainer').innerHTML = '';
+  addLog('Config applied: rate=' + RATE + ', burst=' + BURST + '. Bucket reset to ' + BURST, 'info');
+}
+
+function renderConceptCards() {
+  const hasBurst = BURST > RATE;
+  document.getElementById('conceptGrid').innerHTML = `
+    <div class="card">
+      <h2>throttling_rate_limit</h2>
+      <div class="stat">${RATE} <span class="stat-unit">req/s</span></div>
+      <h3>Sustained Throughput</h3>
+      <p>Bucket refills at <strong>${RATE} tokens/second</strong>. This is the steady-state max. Send exactly ${RATE} req/s continuously and none are rejected.</p>
+    </div>
+    <div class="card">
+      <h2>throttling_burst_limit</h2>
+      <div class="stat">${BURST} <span class="stat-unit">tokens</span></div>
+      <h3>Max Bucket Size</h3>
+      <p>Bucket holds at most <strong>${BURST} tokens</strong>. ${hasBurst
+        ? 'When full, you can fire ' + BURST + ' requests instantly. After that, limited to ' + RATE + '/s refill.'
+        : 'Same as rate \u2014 no burst advantage. Flat cap at ' + RATE + ' req/s.'}</p>
+    </div>
+    <div class="card">
+      <h2>Refill Strategy</h2>
+      <div class="stat" style="font-size:2.2rem;">+${RATE}/s</div>
+      <h3>Interval Refill</h3>
+      <p>Every second, <strong>${RATE} tokens</strong> are added. Bucket never exceeds ${BURST}. ${BURST > RATE
+        ? 'Full recovery from empty takes ~' + (BURST / RATE).toFixed(1) + 's.'
+        : 'Full refill in 1 second.'}</p>
+    </div>
+    <div class="card">
+      <h2>When Empty</h2>
+      <div class="stat" style="font-size:2.2rem;">429</div>
+      <h3>Too Many Requests</h3>
+      <p>If <strong>0 tokens</strong> remain, requests are <strong>rejected</strong> with HTTP 429. Client must wait for refill. ${BURST > RATE
+        ? 'Wait ' + (1/RATE).toFixed(3) + 's for 1 token.'
+        : 'Wait up to 1s for ' + RATE + ' tokens.'}</p>
+    </div>`;
+}
+
+function renderDynamicButtons() {
+  const btns = [1, Math.round(RATE / 2), RATE];
+  if (BURST > RATE) {
+    btns.push(BURST);
+    btns.push(Math.round(BURST * 1.2));
+  } else {
+    btns.push(RATE + 1);
+    btns.push(RATE * 2);
+  }
+  const unique = [...new Set(btns)].filter(v => v > 0).sort((a, b) => a - b);
+  const el = document.getElementById('dynamicButtons');
+  el.innerHTML = unique.map(n => {
+    const isDanger = n > BURST;
+    return `<button class="btn${isDanger ? ' danger' : ''}" onclick="sendRequest(${n})">${isDanger ? 'Burst ' : 'Send '}${n}</button>`;
+  }).join('') + '<button class="btn" onclick="resetBucket()">Reset Bucket</button>';
+
+  document.getElementById('bucketMaxLabel').textContent = '\u2190 ' + BURST + ' max';
+  document.getElementById('refillLabel').textContent = '+' + RATE + ' tokens/sec';
+}
+
+function updateBucketUI() {
+  const pct = (tokens / BURST) * 100;
+  document.getElementById('bucketWater').style.height = pct + '%';
+  document.getElementById('bucketLabel').textContent = tokens;
+  document.getElementById('tokensAvail').textContent = tokens;
+  document.getElementById('acceptedCount').textContent = accepted;
+  document.getElementById('rejectedCount').textContent = rejected;
+  document.getElementById('totalCount').textContent = totalSent;
+  document.getElementById('reqCounter').textContent = totalSent;
+}
+
+function addLog(msg, type) {
+  const el = document.getElementById('logContainer');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry log-' + type;
+  const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 });
+  entry.textContent = '[' + time + '] ' + msg;
+  el.prepend(entry);
+  if (el.children.length > 150) el.removeChild(el.lastChild);
+}
+
+function sendRequest(count) {
+  let acc = 0, rej = 0;
+  for (let i = 0; i < count; i++) {
+    totalSent++;
+    if (tokens > 0) { tokens--; accepted++; acc++; }
+    else { rejected++; rej++; }
+  }
+  if (acc > 0) addLog('\u2713 ' + acc + ' request(s) accepted \u2014 ' + tokens + ' tokens remaining', 'ok');
+  if (rej > 0) addLog('\u2717 ' + rej + ' request(s) REJECTED (429) \u2014 bucket empty!', 'reject');
+  updateBucketUI();
+}
+
+function resetBucket() {
+  tokens = BURST; accepted = 0; rejected = 0; totalSent = 0;
+  document.getElementById('logContainer').innerHTML = '';
+  addLog('Bucket reset to ' + BURST + ' tokens', 'info');
+  updateBucketUI();
+}
+
+function startRefillTimer() {
+  if (refillTimer) clearInterval(refillTimer);
+  refillTimer = setInterval(() => {
+    if (tokens < BURST) {
+      const add = Math.min(RATE, BURST - tokens);
+      tokens += add;
+      if (add > 0) addLog('\u21bb Refilled +' + add + ' tokens (now ' + tokens + ')', 'refill');
+      updateBucketUI();
+    }
+  }, 1000);
+}
+
+// Timeline
+const canvas = document.getElementById('timeline');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  canvas.width = canvas.clientWidth * 2;
+  canvas.height = canvas.clientHeight * 2;
+  ctx.scale(2, 2);
+}
+resizeCanvas();
+window.addEventListener('resize', () => { resizeCanvas(); drawScenario(currentScenario); });
+
+let currentScenario = 'steady';
+
+function generateScenario(type) {
+  const steps = [];
+  const seconds = 10;
+  let t = BURST;
+
+  if (type === 'steady') {
+    for (let s = 0; s < seconds; s++) {
+      const req = RATE;
+      const consumed = Math.min(req, t);
+      const rej = req - consumed;
+      t -= consumed;
+      t = Math.min(BURST, t + RATE);
+      steps.push({ sec: s, tokens: t, requests: req, rejected: rej });
+    }
+  } else if (type === 'burst') {
+    let req = BURST;
+    let consumed = Math.min(req, t); let rej = req - consumed;
+    t -= consumed; t = Math.min(BURST, t + RATE);
+    steps.push({ sec: 0, tokens: t, requests: req, rejected: rej });
+    for (let s = 1; s < seconds; s++) {
+      req = 0; t = Math.min(BURST, t + RATE);
+      steps.push({ sec: s, tokens: t, requests: req, rejected: 0 });
+    }
+  } else if (type === 'spike') {
+    const spikeSize = Math.round(BURST * 1.5);
+    let req = spikeSize;
+    let consumed = Math.min(req, t); let rej = req - consumed;
+    t -= consumed; t = Math.min(BURST, t + RATE);
+    steps.push({ sec: 0, tokens: t, requests: req, rejected: rej });
+    for (let s = 1; s < seconds; s++) {
+      req = Math.round(RATE * 0.2);
+      consumed = Math.min(req, t); rej = req - consumed;
+      t -= consumed; t = Math.min(BURST, t + RATE);
+      steps.push({ sec: s, tokens: t, requests: req, rejected: rej });
+    }
+  } else if (type === 'over-rate') {
+    const overRate = Math.round(RATE * 1.5);
+    for (let s = 0; s < seconds; s++) {
+      const req = overRate;
+      const consumed = Math.min(req, t);
+      const rej = req - consumed;
+      t -= consumed; t = Math.min(BURST, t + RATE);
+      steps.push({ sec: s, tokens: t, requests: req, rejected: rej });
+    }
+  } else if (type === 'wave') {
+    for (let s = 0; s < seconds; s++) {
+      const req = s % 2 === 0 ? Math.round(RATE * 1.6) : Math.round(RATE * 0.4);
+      const consumed = Math.min(req, t);
+      const rej = req - consumed;
+      t -= consumed; t = Math.min(BURST, t + RATE);
+      steps.push({ sec: s, tokens: t, requests: req, rejected: rej });
+    }
+  } else if (type === 'gradual') {
+    for (let s = 0; s < seconds; s++) {
+      const req = Math.round((RATE * 0.2) + s * (RATE * 0.22));
+      const consumed = Math.min(req, t);
+      const rej = req - consumed;
+      t -= consumed; t = Math.min(BURST, t + RATE);
+      steps.push({ sec: s, tokens: t, requests: req, rejected: rej });
+    }
+  }
+  return steps;
+}
+
+function renderScenarioTabs() {
+  const spikeSize = Math.round(BURST * 1.5);
+  const overRate = Math.round(RATE * 1.5);
+  const tabs = [
+    { id: 'steady', label: 'Steady ' + RATE + '/s' },
+    { id: 'burst', label: 'Burst ' + BURST + ' then idle' },
+    { id: 'spike', label: 'Spike ' + spikeSize + ' req' },
+    { id: 'over-rate', label: 'Sustained ' + overRate + '/s' },
+    { id: 'wave', label: 'Wave Pattern' },
+    { id: 'gradual', label: 'Gradual Ramp-up' }
+  ];
+  document.getElementById('scenarioTabs').innerHTML = tabs.map(t =>
+    '<button class="scenario-tab' + (t.id === currentScenario ? ' active' : '') + '" onclick="setScenario(\'' + t.id + '\', this)">' + t.label + '</button>'
+  ).join('');
+}
+
+function drawScenario(type) {
+  currentScenario = type;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  const steps = generateScenario(type);
+  const pad = { top: 30, right: 20, bottom: 40, left: 50 };
+  const gw = w - pad.left - pad.right;
+  const gh = h - pad.top - pad.bottom;
+
+  ctx.clearRect(0, 0, w, h);
+
+  const maxY = Math.max(BURST, ...steps.map(s => s.requests)) * 1.15;
+
+  ctx.strokeStyle = '#1e2845';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 5; i++) {
+    const y = pad.top + (gh / 5) * i;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w - pad.right, y); ctx.stroke();
+    ctx.fillStyle = '#5c6a8a';
+    ctx.font = '11px "IBM Plex Mono"';
+    ctx.textAlign = 'right';
+    ctx.fillText(Math.round(maxY - (maxY / 5) * i), pad.left - 8, y + 4);
+  }
+
+  ctx.textAlign = 'center';
+  steps.forEach((s, i) => {
+    const x = pad.left + (gw / (steps.length - 1 || 1)) * i;
+    ctx.fillStyle = '#5c6a8a';
+    ctx.fillText(s.sec + 's', x, h - 8);
+  });
+
+  ctx.font = '11px "IBM Plex Mono"';
+  ctx.fillStyle = '#5c6a8a';
+  ctx.textAlign = 'center';
+  ctx.fillText('Time (seconds)', w / 2, h - pad.bottom + 35);
+
+  const barW = gw / steps.length * 0.35;
+  steps.forEach((s, i) => {
+    const x = pad.left + (gw / (steps.length - 1 || 1)) * i;
+    const barH = (s.requests / maxY) * gh;
+    const rejH = (s.rejected / maxY) * gh;
+
+    ctx.fillStyle = 'rgba(0, 229, 160, 0.2)';
+    ctx.fillRect(x - barW / 2, pad.top + gh - barH, barW, barH - rejH);
+
+    if (s.rejected > 0) {
+      ctx.fillStyle = 'rgba(255, 77, 106, 0.3)';
+      ctx.fillRect(x - barW / 2, pad.top + gh - barH, barW, rejH);
+    }
+
+    if (s.requests > 0) {
+      ctx.fillStyle = s.rejected > 0 ? '#ff4d6a' : '#00e5a0';
+      ctx.font = '10px "IBM Plex Mono"';
+      ctx.textAlign = 'center';
+      ctx.fillText(s.requests + ' req', x, pad.top + gh - barH - 6);
+    }
+  });
+
+  ctx.beginPath();
+  ctx.strokeStyle = '#00e5a0';
+  ctx.lineWidth = 3;
+  ctx.shadowColor = '#00e5a0';
+  ctx.shadowBlur = 8;
+  steps.forEach((s, i) => {
+    const x = pad.left + (gw / (steps.length - 1 || 1)) * i;
+    const y = pad.top + gh - (s.tokens / maxY) * gh;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  steps.forEach((s, i) => {
+    const x = pad.left + (gw / (steps.length - 1 || 1)) * i;
+    const y = pad.top + gh - (s.tokens / maxY) * gh;
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = s.tokens === 0 ? '#ff4d6a' : '#00e5a0';
+    ctx.fill();
+    ctx.fillStyle = '#e8eaf6';
+    ctx.font = 'bold 11px "IBM Plex Mono"';
+    ctx.textAlign = 'center';
+    ctx.fillText(s.tokens, x, y - 12);
+  });
+
+  ctx.font = '11px "IBM Plex Mono"';
+  ctx.fillStyle = '#00e5a0';
+  ctx.fillRect(w - 200, 10, 12, 12);
+  ctx.fillText('Tokens available', w - 200 + 18, 20);
+  ctx.fillStyle = 'rgba(0, 229, 160, 0.3)';
+  ctx.fillRect(w - 200, 28, 12, 12);
+  ctx.fillStyle = '#7986a8';
+  ctx.fillText('Requests/sec', w - 200 + 18, 38);
+  ctx.fillStyle = 'rgba(255, 77, 106, 0.4)';
+  ctx.fillRect(w - 200, 46, 12, 12);
+  ctx.fillStyle = '#7986a8';
+  ctx.fillText('Rejected (429)', w - 200 + 18, 56);
+
+  const totalReq = steps.reduce((a, s) => a + s.requests, 0);
+  const totalRej = steps.reduce((a, s) => a + s.rejected, 0);
+  document.getElementById('scenarioSummary').innerHTML =
+    '<div class="summary-box"><div class="label">Total Requests</div><div class="value blue">' + totalReq + '</div></div>' +
+    '<div class="summary-box"><div class="label">Accepted</div><div class="value green">' + (totalReq - totalRej) + '</div></div>' +
+    '<div class="summary-box"><div class="label">Rejected</div><div class="value red">' + totalRej + '</div></div>' +
+    '<div class="summary-box"><div class="label">Final Tokens</div><div class="value green">' + steps[steps.length - 1].tokens + '</div></div>';
+}
+
+function setScenario(type, el) {
+  document.querySelectorAll('.scenario-tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  drawScenario(type);
+}
+
+// Init
+applyConfig();
+</script>
+
+</body>
+</html>
