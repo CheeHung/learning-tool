@@ -105,6 +105,9 @@ header p {
 .card-dns::before { background: linear-gradient(90deg, #48dbfb, #b388ff); }
 .card-dns:hover { border-color: #48dbfb; }
 
+.card-irsa::before { background: linear-gradient(90deg, #a78bfa, #48dbfb); }
+.card-irsa:hover { border-color: #a78bfa; }
+
 .card-icon {
   font-size: 2.4rem;
   margin-bottom: 16px;
@@ -225,6 +228,19 @@ footer {
       <span class="tag">DNS</span>
       <span class="tag">EKS</span>
       <span class="tag">CoreDNS</span>
+    </div>
+  </a>
+
+  <a href="irsa-eks-explainer.html" class="card card-irsa">
+    <span class="card-arrow">&rarr;</span>
+    <span class="card-icon">🔐</span>
+    <h2>IRSA on EKS</h2>
+    <p>Build the ServiceAccount + IAM trust policy, watch the AssumeRoleWithWebIdentity token exchange flow, inspect JWT claims, and diagnose real-world IRSA pitfalls.</p>
+    <div class="card-tags">
+      <span class="tag">EKS</span>
+      <span class="tag">IAM</span>
+      <span class="tag">OIDC</span>
+      <span class="tag">JWT</span>
     </div>
   </a>
 
