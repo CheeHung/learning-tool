@@ -1,0 +1,1377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IRSA on EKS — IAM Roles for Service Accounts Interactive Explainer</title>
+<meta name="description" content="Interactive simulator for IRSA (IAM Roles for Service Accounts) on Amazon EKS. Build the ServiceAccount + IAM trust policy, watch the AssumeRoleWithWebIdentity token exchange flow, inspect JWT claims, and diagnose real-world IRSA pitfalls.">
+<meta name="keywords" content="IRSA EKS, IAM roles for service accounts, AssumeRoleWithWebIdentity, EKS OIDC provider, kubernetes service account AWS, eksctl iamserviceaccount, IRSA trust policy, JWT projected token EKS">
+<meta name="robots" content="index, follow">
+<meta property="og:type" content="website">
+<meta property="og:title" content="IRSA on EKS — IAM Roles for Service Accounts Interactive Explainer">
+<meta property="og:description" content="Build the ServiceAccount + IAM trust policy, watch the AssumeRoleWithWebIdentity flow, inspect JWT claims, and diagnose real-world IRSA pitfalls.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="IRSA on EKS — IAM Roles for Service Accounts Interactive Explainer">
+<meta name="twitter:description" content="Build the ServiceAccount + IAM trust policy, watch the AssumeRoleWithWebIdentity flow, inspect JWT claims, and diagnose real-world IRSA pitfalls.">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; padding: 20px; }
+h1 { text-align: center; margin-bottom: 6px; color: #a78bfa; }
+.subtitle { text-align: center; color: #888; margin-bottom: 22px; font-size: 14px; }
+a.back { color: #888; font-size: 12px; text-decoration: none; }
+a.back:hover { color: #a78bfa; }
+.top-bar { display: flex; justify-content: space-between; align-items: center; max-width: 1400px; margin: 0 auto 14px; }
+
+.section { max-width: 1400px; margin: 0 auto 24px; }
+.section-title { font-size: 16px; font-weight: 700; color: #a78bfa; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.section-title .badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: #1a2a4a; border: 1px solid #a78bfa; color: #a78bfa; font-weight: 600; }
+.section-sub { color: #888; font-size: 12px; margin-bottom: 14px; line-height: 1.6; }
+.panel { background: #16213e; border: 1px solid #2a3a5e; border-radius: 12px; padding: 16px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+
+button { padding: 7px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.15s; font-family: inherit; }
+button:hover:not(:disabled) { transform: translateY(-1px); }
+button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.btn-primary { background: #a78bfa; color: #1a1a2e; }
+.btn-danger  { background: #ff4c4c; color: #fff; }
+.btn-warn    { background: #ffb74d; color: #1a1a2e; }
+.btn-green   { background: #6db33f; color: #1a1a2e; }
+.btn-reset   { background: #333; color: #aaa; border: 1px solid #555; }
+.btn-blue    { background: #48dbfb; color: #1a1a2e; }
+
+select, input[type=text], input[type=number], textarea { background: #0d1b2a; color: #eee; border: 1px solid #2a3a5e; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-family: monospace; }
+input[type=range] { accent-color: #a78bfa; }
+label { font-size: 11px; color: #aaa; }
+.ctrl { display: flex; flex-direction: column; gap: 4px; }
+.ctrl .vv { font-size: 12px; color: #a78bfa; font-weight: 700; font-family: monospace; }
+
+/* ---- presets row ---- */
+.presets-row { display: flex; gap: 10px; max-width: 1400px; margin: 0 auto 18px; flex-wrap: wrap; padding: 12px; background: #0d1b2a; border-radius: 8px; border: 1px solid #2a3a5e; align-items: center; }
+.presets-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px; }
+
+/* ---- section 1: SA setup ---- */
+.tab-row { display: flex; gap: 4px; margin-bottom: 0; }
+.tab { padding: 8px 16px; background: #0d1b2a; border: 1px solid #2a3a5e; border-bottom: none; border-radius: 6px 6px 0 0; cursor: pointer; font-size: 12px; font-weight: 600; color: #888; }
+.tab.active { background: #16213e; color: #a78bfa; border-color: #a78bfa; border-bottom: 1px solid #16213e; margin-bottom: -1px; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+.tab-content-wrap { background: #16213e; border: 1px solid #2a3a5e; border-radius: 0 8px 8px 8px; padding: 14px; }
+
+.input-row { display: flex; gap: 12px; flex-wrap: wrap; padding: 12px; background: #0d1b2a; border-radius: 8px; margin-bottom: 14px; border: 1px solid #2a3a5e; }
+.input-row .ctrl { flex: 1; min-width: 140px; }
+.input-row input[type=text] { width: 100%; }
+
+.code-block { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 14px; font-family: 'Menlo', 'Consolas', monospace; font-size: 11px; line-height: 1.7; color: #c8d0e0; overflow-x: auto; position: relative; white-space: pre; }
+.code-block .copy-btn { position: absolute; top: 8px; right: 8px; background: #1a2a4a; color: #a78bfa; border: 1px solid #2a3a5e; padding: 4px 10px; font-size: 10px; font-weight: 600; }
+.code-block .copy-btn.copied { background: #0a2a1a; color: #6db33f; border-color: #6db33f; }
+
+.kw { color: #c084ff; }
+.str { color: #ffb74d; }
+.cm { color: #5a6478; font-style: italic; }
+.ann { color: #6db33f; }
+.fnk { color: #ffe066; }
+.var { color: #48dbfb; }
+.num { color: #f78c6c; }
+
+.cluster-diagram { background: #0d1b2a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 16px; min-height: 120px; display: flex; gap: 14px; align-items: stretch; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
+.cluster-box { background: #1a2a4a; border: 2px solid #2a3a5e; border-radius: 8px; padding: 10px 14px; flex: 1; min-width: 180px; max-width: 260px; transition: all 0.5s; opacity: 0.3; transform: scale(0.95); }
+.cluster-box.appeared { opacity: 1; transform: scale(1); border-color: #a78bfa; box-shadow: 0 0 14px rgba(167, 139, 250, 0.3); }
+.cluster-box-icon { font-size: 22px; margin-bottom: 4px; }
+.cluster-box-title { font-size: 12px; font-weight: 700; color: #a78bfa; }
+.cluster-box-detail { font-size: 10px; color: #888; font-family: monospace; margin-top: 4px; word-break: break-all; }
+
+/* ---- section 2: validation chain ---- */
+.chain { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 16px; background: #0d1b2a; border-radius: 10px; margin-bottom: 12px; flex-wrap: wrap; border: 1px solid #2a3a5e; }
+.chain-link { background: #1a2a4a; border: 2px solid #2a3a5e; border-radius: 10px; padding: 12px; flex: 1; min-width: 140px; text-align: center; transition: all 0.3s; cursor: pointer; }
+.chain-link.ok { border-color: #6db33f; background: #0a2a1a; }
+.chain-link.bad { border-color: #ff4c4c; background: #2a0a0a; animation: shake 0.4s ease; }
+.chain-link.selected { box-shadow: 0 0 0 2px #a78bfa; }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+.chain-link-icon { font-size: 22px; margin-bottom: 4px; }
+.chain-link-title { font-size: 12px; font-weight: 700; color: #c8d0e0; }
+.chain-link-detail { font-size: 9px; color: #888; font-family: monospace; margin-top: 4px; word-break: break-all; }
+.chain-arrow { width: 24px; height: 2px; background: #2a3a5e; transition: all 0.3s; flex-shrink: 0; position: relative; }
+.chain-arrow.ok { background: #6db33f; }
+.chain-arrow.bad { background: #ff4c4c; }
+.chain-arrow::after { content: '▶'; position: absolute; right: -6px; top: -8px; font-size: 12px; color: inherit; }
+@media (max-width: 800px) { .chain-arrow { display: none; } }
+
+.health-row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.health-badge { display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+.health-badge.healthy { background: #0a2a1a; color: #6db33f; border: 1px solid #6db33f; }
+.health-badge.broken { background: #2a0a0a; color: #ff4c4c; border: 1px solid #ff4c4c; animation: pulseBad 1.2s ease infinite; }
+@keyframes pulseBad { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+.editor-pane { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 12px; }
+.editor-title { font-size: 11px; color: #a78bfa; font-weight: 700; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; justify-content: space-between; align-items: center; }
+.editor-title .indicator { font-size: 10px; padding: 2px 8px; border-radius: 10px; }
+.editor-title .indicator.ok { background: #0a2a1a; color: #6db33f; }
+.editor-title .indicator.bad { background: #2a0a0a; color: #ff4c4c; }
+.editor-content { font-family: monospace; font-size: 11px; line-height: 1.6; }
+.editor-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.editor-row .key { color: #48dbfb; min-width: 110px; flex-shrink: 0; }
+.editor-row input, .editor-row select { flex: 1; background: #1a1a2e; color: #fff; border: 1px solid #2a3a5e; padding: 4px 8px; font-family: monospace; font-size: 11px; border-radius: 4px; }
+.editor-row .ind { font-size: 16px; flex-shrink: 0; width: 22px; text-align: center; }
+.editor-row .ind.ok { color: #6db33f; }
+.editor-row .ind.bad { color: #ff4c4c; }
+.editor-row .ind.neutral { color: #555; }
+.editor-row label { color: #aaa; min-width: 110px; }
+
+.error-display { background: #2a0a0a; border: 1px solid #ff4c4c; border-radius: 8px; padding: 12px; margin-top: 12px; font-family: monospace; font-size: 11px; color: #ffaaaa; line-height: 1.6; display: none; }
+.error-display.visible { display: block; }
+.error-display .err-title { color: #ff4c4c; font-weight: 700; margin-bottom: 6px; font-family: -apple-system, sans-serif; font-size: 12px; }
+.success-display { background: #0a2a1a; border: 1px solid #6db33f; border-radius: 8px; padding: 12px; margin-top: 12px; font-size: 12px; color: #aaffaa; line-height: 1.6; display: none; }
+.success-display.visible { display: block; }
+.success-display .succ-title { color: #6db33f; font-weight: 700; margin-bottom: 6px; }
+
+.challenge-box { background: #1e1840; border: 1px solid #a78bfa; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; font-size: 12px; color: #d6c8ff; line-height: 1.6; }
+.challenge-box strong { color: #a78bfa; }
+
+/* ---- section 3: token exchange flow ---- */
+.flow-controls { display: flex; gap: 12px; align-items: center; padding: 10px 12px; background: #0d1b2a; border-radius: 8px; margin-bottom: 14px; flex-wrap: wrap; border: 1px solid #2a3a5e; }
+.flow-canvas { background: #0d1b2a; border: 1px solid #2a3a5e; border-radius: 10px; padding: 18px; position: relative; overflow: hidden; }
+.flow-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
+@media (max-width: 900px) { .flow-grid { grid-template-columns: 1fr; } }
+.flow-col { display: flex; flex-direction: column; gap: 14px; }
+.flow-col-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; text-align: center; padding-bottom: 6px; border-bottom: 1px solid #2a3a5e; }
+.flow-node { background: #1a2a4a; border: 2px solid #2a3a5e; border-radius: 10px; padding: 12px; transition: all 0.4s; position: relative; min-height: 64px; }
+.flow-node.active { border-color: #a78bfa; background: #2a1a4e; box-shadow: 0 0 16px rgba(167, 139, 250, 0.4); transform: scale(1.02); }
+.flow-node.success { border-color: #6db33f; background: #0a2a1a; }
+.flow-node.error { border-color: #ff4c4c; background: #2a0a0a; animation: shake 0.4s; }
+.flow-node-title { font-size: 12px; font-weight: 700; color: #c8d0e0; margin-bottom: 4px; }
+.flow-node.active .flow-node-title { color: #a78bfa; }
+.flow-node.success .flow-node-title { color: #6db33f; }
+.flow-node.error .flow-node-title { color: #ff4c4c; }
+.flow-node-detail { font-size: 10px; color: #888; font-family: monospace; }
+.flow-node .step-num { position: absolute; top: -10px; left: -10px; width: 24px; height: 24px; background: #2a3a5e; color: #888; border-radius: 50%; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 2px solid #16213e; }
+.flow-node.active .step-num, .flow-node.success .step-num { background: #a78bfa; color: #1a1a2e; }
+.flow-node.error .step-num { background: #ff4c4c; color: #fff; }
+
+.flow-terminal { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 12px; font-family: 'Menlo', 'Consolas', monospace; font-size: 11px; min-height: 220px; max-height: 320px; overflow-y: auto; margin-top: 14px; }
+.term-line { margin-bottom: 4px; line-height: 1.5; }
+.term-prompt { color: #888; }
+.term-cmd { color: #a78bfa; }
+.term-resp { color: #c8d0e0; }
+.term-fail { color: #ff4c4c; }
+.term-ok { color: #6db33f; }
+.term-comment { color: #555; }
+.term-key { color: #48dbfb; }
+.term-step-marker { color: #a78bfa; font-weight: 700; padding-top: 6px; border-top: 1px dashed #2a3a5e; margin-top: 6px; }
+
+.packet { position: fixed; background: #a78bfa; color: #1a1a2e; padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: 700; box-shadow: 0 0 16px rgba(167, 139, 250, 0.6); pointer-events: none; z-index: 1000; transition: all 0.65s ease; }
+
+/* ---- section 4: JWT inspector ---- */
+.jwt-toggle { display: flex; gap: 4px; margin-bottom: 10px; }
+.jwt-toggle button { background: #1a2a4a; color: #888; border: 1px solid #2a3a5e; padding: 6px 14px; }
+.jwt-toggle button.active { background: #a78bfa; color: #1a1a2e; }
+
+.jwt-display { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 14px; font-family: monospace; font-size: 11px; line-height: 1.7; min-height: 240px; }
+.jwt-encoded-view { word-break: break-all; }
+.jwt-encoded-view .jwt-h { color: #48dbfb; }
+.jwt-encoded-view .jwt-p { color: #ffb74d; }
+.jwt-encoded-view .jwt-s { color: #6db33f; }
+.jwt-encoded-view .jwt-dot { color: #fff; font-weight: 700; }
+.jwt-encoded-legend { margin-top: 12px; font-size: 11px; color: #888; }
+.jwt-encoded-legend .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+
+.jwt-claim-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; padding: 6px 8px; border-radius: 4px; transition: background 0.2s; }
+.jwt-claim-row.match { background: #0a2a1a; }
+.jwt-claim-row.mismatch { background: #2a0a0a; }
+.jwt-claim-row.neutral { background: #16213e; }
+.jwt-claim-row .ck { color: #48dbfb; min-width: 70px; flex-shrink: 0; }
+.jwt-claim-row input { flex: 1; background: #1a1a2e; color: #fff; border: 1px solid #2a3a5e; padding: 4px 8px; font-family: monospace; font-size: 11px; border-radius: 4px; min-width: 0; }
+.jwt-claim-row .res { font-size: 16px; flex-shrink: 0; width: 22px; text-align: center; }
+.jwt-claim-row.match .res { color: #6db33f; }
+.jwt-claim-row.mismatch .res { color: #ff4c4c; }
+.jwt-claim-row.neutral .res { color: #555; }
+
+.policy-display { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 14px; font-family: monospace; font-size: 11px; line-height: 1.7; color: #c8d0e0; min-height: 240px; white-space: pre; overflow-x: auto; }
+.policy-display .pol-match { color: #6db33f; font-weight: 700; }
+.policy-display .pol-mismatch { color: #ff4c4c; font-weight: 700; background: #2a0a0a; padding: 0 3px; }
+
+.match-result { padding: 12px 14px; border-radius: 8px; margin-top: 12px; font-weight: 700; text-align: center; font-size: 13px; }
+.match-result.success { background: #0a2a1a; border: 1px solid #6db33f; color: #6db33f; }
+.match-result.fail { background: #2a0a0a; border: 1px solid #ff4c4c; color: #ff4c4c; }
+
+/* ---- section 5: pitfall lab ---- */
+.scenario-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.scenario-buttons button { padding: 10px 16px; }
+.scenario-buttons button.selected { box-shadow: 0 0 0 2px #a78bfa; transform: translateY(-2px); }
+.scenario-display { background: #16213e; border: 1px solid #2a3a5e; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+.scenario-symptom { background: #2a0a0a; border: 1px solid #ff4c4c; border-radius: 6px; padding: 12px; margin-bottom: 14px; font-family: monospace; font-size: 11px; color: #ffaaaa; line-height: 1.7; }
+.scenario-symptom strong { color: #ff4c4c; font-family: -apple-system, sans-serif; font-size: 12px; }
+.inspector-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+@media (max-width: 900px) { .inspector-grid { grid-template-columns: 1fr; } }
+.inspector-panel { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 6px; padding: 12px; font-family: monospace; font-size: 11px; line-height: 1.7; }
+.inspector-panel .ip-title { color: #a78bfa; font-size: 10px; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.5px; font-family: -apple-system, sans-serif; }
+.inspector-panel .ip-row { color: #c8d0e0; }
+.inspector-panel .ip-row .k { color: #48dbfb; }
+.inspector-panel .ip-row .v-bad { color: #ff4c4c; }
+.inspector-panel .ip-row .v-warn { color: #ffb74d; }
+.inspector-panel .ip-row .v-ok { color: #6db33f; }
+
+.choice-list { display: flex; flex-direction: column; gap: 8px; }
+.choice-btn { background: #1a2a4a; color: #c8d0e0; border: 1px solid #2a3a5e; padding: 12px 14px; text-align: left; cursor: pointer; border-radius: 6px; font-size: 12px; transition: all 0.2s; line-height: 1.5; font-weight: 500; }
+.choice-btn:hover:not(:disabled) { background: #2a3a5e; border-color: #a78bfa; }
+.choice-btn.correct { background: #0a2a1a; border-color: #6db33f; color: #6db33f; font-weight: 700; }
+.choice-btn.wrong { background: #2a0a0a; border-color: #ff4c4c; color: #ff4c4c; }
+.choice-btn:disabled { cursor: not-allowed; }
+.diagnosis-result { border-radius: 8px; padding: 14px; margin-top: 14px; font-size: 12px; line-height: 1.7; display: none; }
+.diagnosis-result.visible { display: block; }
+.diagnosis-result.correct { background: #0a2a1a; border: 1px solid #6db33f; color: #d4f5d4; }
+.diagnosis-result.wrong { background: #2a0a0a; border: 1px solid #ff4c4c; color: #f5d4d4; }
+.diagnosis-result h4 { margin-bottom: 8px; font-size: 13px; }
+.diagnosis-result.correct h4 { color: #6db33f; }
+.diagnosis-result.wrong h4 { color: #ff4c4c; }
+.diagnosis-result code { background: #0a0a0a; padding: 1px 5px; border-radius: 3px; color: #ffb74d; font-size: 11px; }
+
+/* ---- reference ---- */
+.ref-section { max-width: 1400px; margin: 0 auto 24px; background: #0d1b2a; border-radius: 12px; padding: 16px; border: 1px solid #2a3a5e; }
+.ref-section h2 { color: #a78bfa; font-size: 14px; margin-bottom: 10px; }
+.ref-section details { margin-bottom: 6px; padding: 8px 10px; background: #16213e; border-radius: 6px; border: 1px solid #2a3a5e; }
+.ref-section summary { cursor: pointer; font-size: 12px; color: #a78bfa; font-weight: 600; }
+.ref-section details p, .ref-section details ul, .ref-section details pre { color: #aaa; font-size: 12px; line-height: 1.7; margin-top: 8px; }
+.ref-section details ul { padding-left: 18px; }
+.ref-section code, .ref-section pre { background: #0a0a1a; padding: 1px 5px; border-radius: 3px; color: #ffb74d; font-size: 11px; font-family: monospace; }
+.ref-section pre { padding: 10px; display: block; white-space: pre; overflow-x: auto; line-height: 1.6; }
+
+.warn-box { background: #2d1010; border: 1px solid #ff4c4c; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #ffcccc; line-height: 1.6; margin-bottom: 12px; }
+.warn-box strong { color: #ff4c4c; }
+.info-box { background: #0d1b2a; border: 1px solid #a78bfa; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #ddd0ff; line-height: 1.6; margin-bottom: 12px; }
+.info-box strong { color: #a78bfa; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <a href="index.html" class="back">&larr; Back</a>
+</div>
+<h1>IRSA on EKS</h1>
+<p class="subtitle">IAM Roles for Service Accounts &middot; OIDC trust &middot; Token exchange &middot; All interactive</p>
+
+<!-- =================== SCENARIO PRESETS =================== -->
+<div class="presets-row">
+  <span class="presets-label">Scenario:</span>
+  <button class="btn-green" onclick="preset('happy')">✅ Happy path</button>
+  <button class="btn-warn" onclick="preset('wrong-ns')">❌ Wrong namespace</button>
+  <button class="btn-warn" onclick="preset('missing-oidc')">❌ Missing OIDC provider</button>
+  <button class="btn-warn" onclick="preset('wrong-aud')">❌ Wrong audience</button>
+  <button class="btn-danger" onclick="preset('overpermissive')">🔓 Over-permissive</button>
+  <button class="btn-reset" onclick="preset('reset')">↻ Reset</button>
+</div>
+
+<!-- =================== SECTION 1: SA & ROLE SETUP =================== -->
+<div class="section">
+  <div class="section-title">1. ServiceAccount &amp; IAM Role setup <span class="badge">interactive</span></div>
+  <div class="section-sub">
+    Edit the inputs — the YAML manifest and <code>eksctl</code> command update live. Click "Apply to cluster" to see the resources appear.
+    <br><strong style="color:#a78bfa;">Challenge:</strong> Build a SA + Role for a billing service in the <code style="color:#ffb74d;">payments</code> namespace using DynamoDB read access.
+  </div>
+
+  <div class="input-row">
+    <div class="ctrl"><label>Cluster name</label><input type="text" id="iCluster" value="production-cluster"></div>
+    <div class="ctrl"><label>Region</label><input type="text" id="iRegion" value="us-east-1"></div>
+    <div class="ctrl"><label>AWS account ID</label><input type="text" id="iAccount" value="111122223333"></div>
+    <div class="ctrl"><label>Namespace</label><input type="text" id="iNamespace" value="default"></div>
+    <div class="ctrl"><label>ServiceAccount name</label><input type="text" id="iSaName" value="app-sa"></div>
+    <div class="ctrl"><label>IAM role name</label><input type="text" id="iRoleName" value="AppDynamoDBRole"></div>
+  </div>
+
+  <div class="tab-row">
+    <div class="tab active" id="tabEksctl" onclick="setTab('eksctl')">eksctl one-liner</div>
+    <div class="tab" id="tabYaml" onclick="setTab('yaml')">Manual YAML</div>
+  </div>
+  <div class="tab-content-wrap">
+    <div class="tab-panel active" id="panelEksctl">
+      <div class="code-block" id="cbEksctl"><button class="copy-btn" onclick="copyCode('cbEksctl', this)">Copy</button></div>
+      <p style="font-size:11px; color:#888; margin-top:8px; line-height:1.6;">
+        <strong style="color:#a78bfa;">What this does in one shot:</strong>
+        creates the IAM role &middot; attaches the policy &middot; configures the trust policy with your cluster's OIDC provider &middot; creates the K8s ServiceAccount with the <code style="color:#ffb74d;">eks.amazonaws.com/role-arn</code> annotation.
+      </p>
+    </div>
+    <div class="tab-panel" id="panelYaml">
+      <div class="code-block" id="cbYaml"><button class="copy-btn" onclick="copyCode('cbYaml', this)">Copy</button></div>
+      <p style="font-size:11px; color:#888; margin-top:8px; line-height:1.6;">
+        Manual mode: you create the IAM role + trust policy via Terraform/CLI, then apply this YAML.
+        The annotation tells the EKS Pod Identity Webhook to inject the projected token at pod startup.
+      </p>
+    </div>
+  </div>
+
+  <div style="display:flex; gap:10px; margin-top:14px;">
+    <button class="btn-primary" onclick="applyToCluster()">Apply to cluster</button>
+    <button class="btn-reset" onclick="resetCluster()">Clear</button>
+  </div>
+
+  <div class="cluster-diagram" id="clusterDiagram">
+    <div class="cluster-box" id="cbOidc"><div class="cluster-box-icon">🔑</div><div class="cluster-box-title">OIDC Provider</div><div class="cluster-box-detail" id="cbOidcDetail">—</div></div>
+    <div class="cluster-box" id="cbRole"><div class="cluster-box-icon">🎭</div><div class="cluster-box-title">IAM Role</div><div class="cluster-box-detail" id="cbRoleDetail">—</div></div>
+    <div class="cluster-box" id="cbSa"><div class="cluster-box-icon">📛</div><div class="cluster-box-title">ServiceAccount</div><div class="cluster-box-detail" id="cbSaDetail">—</div></div>
+  </div>
+</div>
+
+<!-- =================== SECTION 2: VALIDATION CHAIN =================== -->
+<div class="section">
+  <div class="section-title">2. Configuration validation chain <span class="badge">live validation</span></div>
+  <div class="section-sub">
+    Four pieces must agree for IRSA to work: <strong>OIDC Provider</strong> ↔ <strong>IAM Trust Policy</strong> ↔ <strong>ServiceAccount</strong> ↔ <strong>Pod</strong>.
+    Edit any field — links turn green/red instantly, and you'll see the AWS error if broken.
+  </div>
+
+  <div class="health-row">
+    <div class="health-badge" id="healthBadge">Checking...</div>
+    <span style="font-size:11px; color:#888;">Click any link to highlight the related fields.</span>
+  </div>
+
+  <div class="chain" id="chain">
+    <div class="chain-link" id="linkOidc" onclick="highlightLink('oidc')">
+      <div class="chain-link-icon">🔑</div>
+      <div class="chain-link-title">OIDC Provider</div>
+      <div class="chain-link-detail" id="linkOidcDetail">—</div>
+    </div>
+    <div class="chain-arrow" id="arrow1"></div>
+    <div class="chain-link" id="linkTrust" onclick="highlightLink('trust')">
+      <div class="chain-link-icon">📜</div>
+      <div class="chain-link-title">Trust Policy</div>
+      <div class="chain-link-detail" id="linkTrustDetail">—</div>
+    </div>
+    <div class="chain-arrow" id="arrow2"></div>
+    <div class="chain-link" id="linkSa" onclick="highlightLink('sa')">
+      <div class="chain-link-icon">📛</div>
+      <div class="chain-link-title">ServiceAccount</div>
+      <div class="chain-link-detail" id="linkSaDetail">—</div>
+    </div>
+    <div class="chain-arrow" id="arrow3"></div>
+    <div class="chain-link" id="linkPod" onclick="highlightLink('pod')">
+      <div class="chain-link-icon">📦</div>
+      <div class="chain-link-title">Pod</div>
+      <div class="chain-link-detail" id="linkPodDetail">—</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="editor-pane">
+      <div class="editor-title">IAM Trust Policy <span class="indicator" id="indTrust">—</span></div>
+      <div class="editor-content">
+        <div class="editor-row"><span class="key">OIDC registered</span><select id="iOidcReg"><option value="true">true</option><option value="false">false</option></select><span class="ind" id="ind-oidcReg">—</span></div>
+        <div class="editor-row"><span class="key">Federated</span><input type="text" id="iOidcUrl" readonly style="opacity:0.7;"><span class="ind neutral">·</span></div>
+        <div class="editor-row"><span class="key">Condition</span><select id="iCondType"><option value="StringEquals">StringEquals</option><option value="StringLike">StringLike</option></select><span class="ind" id="ind-cond">—</span></div>
+        <div class="editor-row"><span class="key">sub</span><input type="text" id="iTrustSub"><span class="ind" id="ind-sub">—</span></div>
+        <div class="editor-row"><span class="key">aud</span><input type="text" id="iTrustAud" value="sts.amazonaws.com"><span class="ind" id="ind-aud">—</span></div>
+      </div>
+    </div>
+    <div class="editor-pane">
+      <div class="editor-title">ServiceAccount &amp; Pod <span class="indicator" id="indSaPod">—</span></div>
+      <div class="editor-content">
+        <div class="editor-row"><span class="key">SA namespace</span><input type="text" id="iSaNs2" value="default"><span class="ind" id="ind-saNs">—</span></div>
+        <div class="editor-row"><span class="key">SA name</span><input type="text" id="iSaName2" value="app-sa"><span class="ind" id="ind-saName">—</span></div>
+        <div class="editor-row"><span class="key">role-arn anno</span><input type="text" id="iSaAnno" readonly style="opacity:0.7;"><span class="ind neutral">·</span></div>
+        <div style="margin-top:10px; padding-top:8px; border-top: 1px dashed #2a3a5e;"></div>
+        <div class="editor-row"><span class="key">Pod uses SA</span><input type="text" id="iPodSa" value="app-sa"><span class="ind" id="ind-podSa">—</span></div>
+        <div class="editor-row"><span class="key">Pod namespace</span><input type="text" id="iPodNs" value="default"><span class="ind" id="ind-podNs">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="error-display" id="errDisplay">
+    <div class="err-title" id="errTitle">AWS error</div>
+    <div id="errBody"></div>
+  </div>
+  <div class="success-display" id="successDisplay">
+    <div class="succ-title">✓ Configuration valid</div>
+    <div>The pod's SDK will be able to call <code style="color:#ffb74d;">sts:AssumeRoleWithWebIdentity</code> and receive temporary credentials. DynamoDB calls will work using the role's permissions.</div>
+  </div>
+</div>
+
+<!-- =================== SECTION 3: TOKEN EXCHANGE FLOW =================== -->
+<div class="section">
+  <div class="section-title">3. Token exchange flow — <code style="color:#ffb74d; font-size:13px;">AssumeRoleWithWebIdentity</code> <span class="badge">step-by-step</span></div>
+  <div class="section-sub">
+    Watch the request travel from the pod to DynamoDB. Each step shows what AWS actually sees in the API call.
+    Try the failure presets above — different scenarios fail at different steps.
+  </div>
+
+  <div class="flow-controls">
+    <button class="btn-primary" id="btnFlowStart" onclick="startFlow()">▶ Auto-play</button>
+    <button class="btn-blue" id="btnFlowStep" onclick="stepFlow()">Step ▶</button>
+    <button class="btn-reset" onclick="resetFlow()">↻ Reset</button>
+    <div class="ctrl" style="margin-left:10px;">
+      <label>Speed: <span class="vv" id="vSpeed">1.0×</span></label>
+      <input type="range" id="iSpeed" min="0.3" max="3" step="0.1" value="1">
+    </div>
+  </div>
+
+  <div class="flow-canvas">
+    <div class="flow-grid">
+      <div class="flow-col">
+        <div class="flow-col-title">Pod / Cluster</div>
+        <div class="flow-node" id="fn1"><div class="step-num">1</div><div class="flow-node-title">Pod scheduled</div><div class="flow-node-detail">webhook injects env vars + projected token volume</div></div>
+        <div class="flow-node" id="fn2"><div class="step-num">2</div><div class="flow-node-title">SDK reads env</div><div class="flow-node-detail">AWS_ROLE_ARN, AWS_WEB_IDENTITY_TOKEN_FILE</div></div>
+        <div class="flow-node" id="fn3"><div class="step-num">3</div><div class="flow-node-title">Token loaded</div><div class="flow-node-detail">/var/run/secrets/eks.amazonaws.com/.../token</div></div>
+      </div>
+      <div class="flow-col">
+        <div class="flow-col-title">AWS STS</div>
+        <div class="flow-node" id="fn4"><div class="step-num">4</div><div class="flow-node-title">AssumeRoleWithWebIdentity</div><div class="flow-node-detail">POST sts.amazonaws.com</div></div>
+        <div class="flow-node" id="fn5"><div class="step-num">5</div><div class="flow-node-title">Verify JWT signature</div><div class="flow-node-detail">fetch JWKS from OIDC issuer</div></div>
+        <div class="flow-node" id="fn6"><div class="step-num">6</div><div class="flow-node-title">Check trust policy</div><div class="flow-node-detail">match sub, aud against conditions</div></div>
+      </div>
+      <div class="flow-col">
+        <div class="flow-col-title">DynamoDB call</div>
+        <div class="flow-node" id="fn7"><div class="step-num">7</div><div class="flow-node-title">Receive temp creds</div><div class="flow-node-detail">AccessKeyId, SecretKey, SessionToken</div></div>
+        <div class="flow-node" id="fn8"><div class="step-num">8</div><div class="flow-node-title">Sign API call</div><div class="flow-node-detail">SigV4 with temp credentials</div></div>
+        <div class="flow-node" id="fn9"><div class="step-num">9</div><div class="flow-node-title">DynamoDB GetItem</div><div class="flow-node-detail">TableName: Users · Key: { id: 42 }</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-terminal" id="flowTerm">
+    <div class="term-line term-comment"># Press "Auto-play" or "Step ▶" to start the token exchange</div>
+  </div>
+</div>
+
+<!-- =================== SECTION 4: JWT INSPECTOR =================== -->
+<div class="section">
+  <div class="section-title">4. JWT token inspector <span class="badge">live decode</span></div>
+  <div class="section-sub">
+    The projected service account token is a real JWT. Edit the claims on the left, see the trust policy match on the right.
+    <br><strong style="color:#a78bfa;">Predict-then-verify:</strong> change a single character in the namespace — does the policy still match?
+  </div>
+
+  <div class="jwt-toggle">
+    <button id="jwtBtnDecoded" class="active" onclick="setJwtView('decoded')">Decoded claims</button>
+    <button id="jwtBtnEncoded" onclick="setJwtView('encoded')">Encoded JWT</button>
+  </div>
+
+  <div class="grid2">
+    <div class="editor-pane">
+      <div class="editor-title">Projected SA token <span class="indicator" id="indJwt">—</span></div>
+      <div class="jwt-display">
+        <div id="jwtDecodedView">
+          <div class="jwt-claim-row neutral"><span class="ck">iss</span><input type="text" id="iJwtIss"><span class="res" id="resJwtIss">·</span></div>
+          <div class="jwt-claim-row neutral"><span class="ck">sub</span><input type="text" id="iJwtSub"><span class="res" id="resJwtSub">·</span></div>
+          <div class="jwt-claim-row neutral"><span class="ck">aud</span><input type="text" id="iJwtAud"><span class="res" id="resJwtAud">·</span></div>
+          <div class="jwt-claim-row neutral"><span class="ck">exp</span><input type="text" id="iJwtExp" readonly style="opacity:0.7;"><span class="res neutral">·</span></div>
+          <div class="jwt-claim-row neutral"><span class="ck">iat</span><input type="text" id="iJwtIat" readonly style="opacity:0.7;"><span class="res neutral">·</span></div>
+          <div class="jwt-claim-row neutral"><span class="ck">kubernetes.io/ namespace</span><input type="text" id="iJwtKubeNs" readonly style="opacity:0.7;"><span class="res neutral">·</span></div>
+        </div>
+        <div id="jwtEncodedView" style="display:none;">
+          <div class="jwt-encoded-view" id="jwtEncodedString"></div>
+          <div class="jwt-encoded-legend">
+            <span class="swatch" style="background:#48dbfb;"></span> header
+            &nbsp;&nbsp;<span class="swatch" style="background:#ffb74d;"></span> payload
+            &nbsp;&nbsp;<span class="swatch" style="background:#6db33f;"></span> signature
+            <p style="margin-top:8px; line-height:1.6;">Each segment is base64url-encoded. The signature is computed by EKS's OIDC issuer using its private key, then verified by AWS STS via the public JWKS endpoint.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="editor-pane">
+      <div class="editor-title">IAM Trust Policy <span class="indicator" id="indPol">—</span></div>
+      <div class="policy-display" id="policyDisplay"></div>
+    </div>
+  </div>
+
+  <div class="match-result" id="matchResult"></div>
+</div>
+
+<!-- =================== SECTION 5: PITFALL LAB =================== -->
+<div class="section">
+  <div class="section-title">5. Pitfall diagnostic lab <span class="badge">game mode</span></div>
+  <div class="section-sub">
+    Each scenario presents a real production symptom. Inspect the panels, then pick the root cause from the choices.
+    <br><strong style="color:#a78bfa;">No second chances</strong> — read carefully before clicking.
+  </div>
+
+  <div class="scenario-buttons">
+    <button class="btn-warn" id="btnPit1" onclick="startPitfall(1)">Case 1 — DynamoDB AccessDenied</button>
+    <button class="btn-warn" id="btnPit2" onclick="startPitfall(2)">Case 2 — STS InvalidIdentityToken</button>
+    <button class="btn-warn" id="btnPit3" onclick="startPitfall(3)">Case 3 — Incorrect token audience</button>
+    <button class="btn-danger" id="btnPit4" onclick="startPitfall(4)">Case 4 — Security audit finding</button>
+  </div>
+
+  <div id="pitfallContainer"></div>
+</div>
+
+<!-- =================== REFERENCE =================== -->
+<div class="ref-section">
+  <h2>Reference &mdash; commands, manifests, and gotchas</h2>
+
+  <details>
+    <summary>Trust policy template (the canonical IRSA trust policy)</summary>
+<pre>{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {
+      "Federated": "arn:aws:iam::&lt;ACCOUNT&gt;:oidc-provider/oidc.eks.&lt;REGION&gt;.amazonaws.com/id/&lt;OIDC_ID&gt;"
+    },
+    "Action": "sts:AssumeRoleWithWebIdentity",
+    "Condition": {
+      "StringEquals": {
+        "oidc.eks.&lt;REGION&gt;.amazonaws.com/id/&lt;OIDC_ID&gt;:sub": "system:serviceaccount:&lt;NS&gt;:&lt;SA&gt;",
+        "oidc.eks.&lt;REGION&gt;.amazonaws.com/id/&lt;OIDC_ID&gt;:aud": "sts.amazonaws.com"
+      }
+    }
+  }]
+}</pre>
+    <p><strong>Critical:</strong> use <code>StringEquals</code>, not <code>StringLike</code>. <code>StringLike</code> with wildcards is the #1 IRSA security gap — it lets <em>any</em> SA in the cluster assume the role.</p>
+  </details>
+
+  <details>
+    <summary>Pod Identity Webhook — what it injects</summary>
+    <p>When a pod is created using a SA with the <code>eks.amazonaws.com/role-arn</code> annotation, the mutating webhook injects:</p>
+    <ul>
+      <li>Env var <code>AWS_ROLE_ARN</code> = the role ARN from the annotation</li>
+      <li>Env var <code>AWS_WEB_IDENTITY_TOKEN_FILE</code> = <code>/var/run/secrets/eks.amazonaws.com/serviceaccount/token</code></li>
+      <li>A <strong>projected volume</strong> with the SA token at that path. The token is auto-refreshed before expiry by kubelet.</li>
+    </ul>
+    <p>You can verify with: <code>kubectl get mutatingwebhookconfiguration pod-identity-webhook -o yaml</code></p>
+  </details>
+
+  <details>
+    <summary>Token rotation — why projected tokens, not regular SA tokens</summary>
+    <p>Old K8s SA tokens were long-lived and stored in Secrets. Projected tokens have:</p>
+    <ul>
+      <li>Short TTL (default 1 hour)</li>
+      <li>Bound to a specific audience (<code>sts.amazonaws.com</code> for IRSA)</li>
+      <li>Bound to a specific pod — invalidated when pod is deleted</li>
+      <li>Auto-rotated by kubelet at 80% of TTL</li>
+    </ul>
+    <p>The AWS SDK re-reads the token file before each STS call, so rotation is transparent to the application.</p>
+  </details>
+
+  <details>
+    <summary>Common AWS errors and what they actually mean</summary>
+    <ul>
+      <li><code>NotAuthorizedException: Not authorized to perform sts:AssumeRoleWithWebIdentity</code> — the trust policy <code>sub</code> condition didn't match. Wrong namespace or wrong SA name. Most common.</li>
+      <li><code>InvalidIdentityToken: No OpenIDConnect provider found</code> — cluster's OIDC provider not added to IAM. Run <code>eksctl utils associate-iam-oidc-provider --cluster &lt;name&gt; --approve</code>.</li>
+      <li><code>InvalidIdentityToken: Incorrect token audience</code> — <code>aud</code> claim ≠ <code>sts.amazonaws.com</code>. Check the OIDC provider's audiences list in IAM.</li>
+      <li><code>InvalidIdentityToken: Issuer does not match</code> — token issuer (cluster OIDC URL) doesn't match what's registered in IAM. Cluster was rebuilt? OIDC ID changed.</li>
+      <li><code>AccessDenied: User: arn:aws:sts::...:assumed-role/.../botocore-session-... is not authorized to perform: dynamodb:GetItem</code> — IRSA worked! But the role's <em>permission policy</em> doesn't allow DynamoDB. Different problem.</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>Debugging IRSA — kubectl &amp; AWS CLI commands</summary>
+<pre><span class="cm"># 1. Verify SA has the annotation</span>
+kubectl get sa &lt;name&gt; -n &lt;ns&gt; -o yaml | grep role-arn
+
+<span class="cm"># 2. Check that webhook injected env vars</span>
+kubectl exec &lt;pod&gt; -- env | grep AWS_
+
+<span class="cm"># 3. Verify projected token exists</span>
+kubectl exec &lt;pod&gt; -- ls -la /var/run/secrets/eks.amazonaws.com/serviceaccount/
+
+<span class="cm"># 4. Decode the JWT to see claims (paste at jwt.io)</span>
+kubectl exec &lt;pod&gt; -- cat /var/run/secrets/eks.amazonaws.com/serviceaccount/token
+
+<span class="cm"># 5. List OIDC providers registered in IAM</span>
+aws iam list-open-id-connect-providers
+
+<span class="cm"># 6. Inspect the role's trust policy</span>
+aws iam get-role --role-name &lt;name&gt; --query 'Role.AssumeRolePolicyDocument'
+
+<span class="cm"># 7. Test from inside the pod</span>
+kubectl exec &lt;pod&gt; -- aws sts get-caller-identity</pre>
+  </details>
+
+  <details>
+    <summary>EKS Pod Identity (the 2023 alternative)</summary>
+    <p>AWS introduced <strong>EKS Pod Identity</strong> as a simpler alternative — no OIDC provider, no trust policy with cluster IDs. Instead, an <em>EKS Pod Identity Agent</em> DaemonSet acts like the EC2 IMDS for pods.</p>
+    <p>IRSA still has its place: cross-account roles, EKS Anywhere, self-managed Kubernetes, or any time you need OIDC federation. Most existing fleets are still IRSA.</p>
+  </details>
+</div>
+
+<script>
+// =================== STATE ===================
+const S = {
+  cluster: 'production-cluster',
+  region: 'us-east-1',
+  accountId: '111122223333',
+  oidcId: 'EXAMPLED539D4633E53DE1B71EXAMPLE',
+  oidcRegistered: true,
+
+  saName: 'app-sa',
+  saNamespace: 'default',
+  roleName: 'AppDynamoDBRole',
+  policyArn: 'arn:aws:iam::aws:policy/AmazonDynamoDBReadOnlyAccess',
+
+  trustNamespace: 'default',
+  trustSaName: 'app-sa',
+  trustAud: 'sts.amazonaws.com',
+  trustCondition: 'StringEquals',
+
+  podSaName: 'app-sa',
+  podNamespace: 'default',
+
+  setupTab: 'eksctl',
+  appliedToCluster: false,
+
+  flowStep: 0,
+  flowAuto: false,
+  flowSpeed: 1,
+  flowFailure: null,
+
+  jwtView: 'decoded',
+  jwtIss: '',
+  jwtSub: 'system:serviceaccount:default:app-sa',
+  jwtAud: 'sts.amazonaws.com',
+
+  pitfallActive: null,
+  pitfallAnswered: false,
+};
+
+// =================== HELPERS ===================
+function oidcUrl() { return `oidc.eks.${S.region}.amazonaws.com/id/${S.oidcId}`; }
+function oidcArn() { return `arn:aws:iam::${S.accountId}:oidc-provider/${oidcUrl()}`; }
+function roleArn() { return `arn:aws:iam::${S.accountId}:role/${S.roleName}`; }
+function expectedSub() { return `system:serviceaccount:${S.trustNamespace}:${S.trustSaName}`; }
+function actualSub() { return `system:serviceaccount:${S.saNamespace}:${S.saName}`; }
+function tokenSub() { return S.jwtSub; }
+
+function copyCode(id, btn) {
+  const el = document.getElementById(id);
+  const text = el.innerText.replace('Copy', '').trim();
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+  });
+}
+
+function setTab(name) {
+  S.setupTab = name;
+  document.getElementById('tabEksctl').classList.toggle('active', name === 'eksctl');
+  document.getElementById('tabYaml').classList.toggle('active', name === 'yaml');
+  document.getElementById('panelEksctl').classList.toggle('active', name === 'eksctl');
+  document.getElementById('panelYaml').classList.toggle('active', name === 'yaml');
+}
+
+// =================== SECTION 1: SA SETUP ===================
+function renderSetup() {
+  const eksctlCmd =
+    `<span class="cm"># One-liner: creates IAM role, trust policy, attaches policy, creates SA</span>\n` +
+    `eksctl create iamserviceaccount \\\n` +
+    `  --cluster=<span class="str">${S.cluster}</span> \\\n` +
+    `  --region=<span class="str">${S.region}</span> \\\n` +
+    `  --namespace=<span class="str">${S.saNamespace}</span> \\\n` +
+    `  --name=<span class="str">${S.saName}</span> \\\n` +
+    `  --role-name=<span class="str">${S.roleName}</span> \\\n` +
+    `  --attach-policy-arn=<span class="str">${S.policyArn}</span> \\\n` +
+    `  --approve`;
+
+  const yamlManifest =
+    `<span class="cm"># Step 1: IAM trust policy (apply via Terraform/CLI)</span>\n` +
+    `<span class="kw">{</span>\n` +
+    `  <span class="fnk">"Version"</span>: <span class="str">"2012-10-17"</span>,\n` +
+    `  <span class="fnk">"Statement"</span>: [{\n` +
+    `    <span class="fnk">"Effect"</span>: <span class="str">"Allow"</span>,\n` +
+    `    <span class="fnk">"Principal"</span>: {\n` +
+    `      <span class="fnk">"Federated"</span>: <span class="str">"arn:aws:iam::${S.accountId}:oidc-provider/${oidcUrl()}"</span>\n` +
+    `    },\n` +
+    `    <span class="fnk">"Action"</span>: <span class="str">"sts:AssumeRoleWithWebIdentity"</span>,\n` +
+    `    <span class="fnk">"Condition"</span>: {\n` +
+    `      <span class="fnk">"StringEquals"</span>: {\n` +
+    `        <span class="fnk">"${oidcUrl()}:sub"</span>: <span class="str">"system:serviceaccount:${S.saNamespace}:${S.saName}"</span>,\n` +
+    `        <span class="fnk">"${oidcUrl()}:aud"</span>: <span class="str">"sts.amazonaws.com"</span>\n` +
+    `      }\n` +
+    `    }\n` +
+    `  }]\n` +
+    `<span class="kw">}</span>\n\n` +
+    `<span class="cm"># Step 2: Kubernetes ServiceAccount manifest</span>\n` +
+    `<span class="kw">apiVersion:</span> <span class="str">v1</span>\n` +
+    `<span class="kw">kind:</span> <span class="str">ServiceAccount</span>\n` +
+    `<span class="kw">metadata:</span>\n` +
+    `  <span class="kw">name:</span> <span class="str">${S.saName}</span>\n` +
+    `  <span class="kw">namespace:</span> <span class="str">${S.saNamespace}</span>\n` +
+    `  <span class="kw">annotations:</span>\n` +
+    `    <span class="ann">eks.amazonaws.com/role-arn:</span> <span class="str">${roleArn()}</span>`;
+
+  document.getElementById('cbEksctl').innerHTML = `<button class="copy-btn" onclick="copyCode('cbEksctl', this)">Copy</button>` + eksctlCmd;
+  document.getElementById('cbYaml').innerHTML = `<button class="copy-btn" onclick="copyCode('cbYaml', this)">Copy</button>` + yamlManifest;
+
+  document.getElementById('cbOidc').classList.toggle('appeared', S.appliedToCluster);
+  document.getElementById('cbRole').classList.toggle('appeared', S.appliedToCluster);
+  document.getElementById('cbSa').classList.toggle('appeared', S.appliedToCluster);
+
+  if (S.appliedToCluster) {
+    document.getElementById('cbOidcDetail').textContent = oidcUrl();
+    document.getElementById('cbRoleDetail').textContent = roleArn();
+    document.getElementById('cbSaDetail').textContent = `${S.saNamespace}/${S.saName}`;
+  } else {
+    document.getElementById('cbOidcDetail').textContent = 'not applied';
+    document.getElementById('cbRoleDetail').textContent = 'not applied';
+    document.getElementById('cbSaDetail').textContent = 'not applied';
+  }
+}
+
+function applyToCluster() {
+  S.appliedToCluster = true;
+  // Stagger the appearance for animation
+  document.getElementById('cbOidc').classList.remove('appeared');
+  document.getElementById('cbRole').classList.remove('appeared');
+  document.getElementById('cbSa').classList.remove('appeared');
+  setTimeout(() => document.getElementById('cbOidc').classList.add('appeared'), 100);
+  setTimeout(() => document.getElementById('cbRole').classList.add('appeared'), 500);
+  setTimeout(() => { document.getElementById('cbSa').classList.add('appeared'); renderSetup(); }, 900);
+}
+function resetCluster() { S.appliedToCluster = false; renderSetup(); }
+
+// =================== SECTION 2: VALIDATION CHAIN ===================
+function validate() {
+  const subOk = S.trustCondition === 'StringEquals'
+    ? expectedSub() === actualSub()
+    : matchStringLike(expectedSub(), actualSub());
+  const audOk = S.trustAud === 'sts.amazonaws.com';
+  const oidcOk = S.oidcRegistered;
+  const condOk = subOk && audOk;
+  const saAnnoOk = true;
+  const podOk = S.podSaName === S.saName && S.podNamespace === S.saNamespace;
+  return {
+    oidc: oidcOk,
+    sub: subOk, aud: audOk, cond: condOk,
+    sa: saAnnoOk,
+    pod: podOk,
+    overall: oidcOk && condOk && saAnnoOk && podOk,
+    overpermissive: S.trustCondition === 'StringLike' && (expectedSub().includes('*'))
+  };
+}
+
+function matchStringLike(pattern, value) {
+  const re = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+  return re.test(value);
+}
+
+function renderChain() {
+  const v = validate();
+  document.getElementById('linkOidc').className = 'chain-link ' + (v.oidc ? 'ok' : 'bad');
+  document.getElementById('linkTrust').className = 'chain-link ' + (v.cond ? 'ok' : 'bad');
+  document.getElementById('linkSa').className = 'chain-link ' + (v.sa ? 'ok' : 'bad');
+  document.getElementById('linkPod').className = 'chain-link ' + (v.pod ? 'ok' : 'bad');
+
+  document.getElementById('arrow1').className = 'chain-arrow ' + (v.oidc ? 'ok' : 'bad');
+  document.getElementById('arrow2').className = 'chain-arrow ' + (v.cond ? 'ok' : 'bad');
+  document.getElementById('arrow3').className = 'chain-arrow ' + (v.sa && v.pod ? 'ok' : 'bad');
+
+  document.getElementById('linkOidcDetail').textContent = S.oidcRegistered ? oidcUrl() : '✗ not in IAM';
+  document.getElementById('linkTrustDetail').textContent = S.trustCondition + ' sub/aud';
+  document.getElementById('linkSaDetail').textContent = `${S.saNamespace}/${S.saName}`;
+  document.getElementById('linkPodDetail').textContent = `uses ${S.podSaName} in ${S.podNamespace}`;
+
+  // health badge
+  const hb = document.getElementById('healthBadge');
+  if (v.overall && !v.overpermissive) {
+    hb.className = 'health-badge healthy';
+    hb.textContent = '✓ All 4 links healthy — IRSA will work';
+  } else if (v.overall && v.overpermissive) {
+    hb.className = 'health-badge broken';
+    hb.textContent = '⚠ Works, but trust policy is over-permissive (security risk)';
+  } else {
+    hb.className = 'health-badge broken';
+    hb.textContent = '✗ Broken — IRSA will fail';
+  }
+
+  // editor indicators
+  const ind = (id, ok) => {
+    const el = document.getElementById(id);
+    el.textContent = ok ? '✓' : '✗';
+    el.className = 'ind ' + (ok ? 'ok' : 'bad');
+  };
+  ind('ind-oidcReg', v.oidc);
+  ind('ind-cond', v.cond && !v.overpermissive);
+  ind('ind-sub', v.sub);
+  ind('ind-aud', v.aud);
+  ind('ind-saNs', S.saNamespace === S.trustNamespace);
+  ind('ind-saName', S.saName === S.trustSaName);
+  ind('ind-podSa', S.podSaName === S.saName);
+  ind('ind-podNs', S.podNamespace === S.saNamespace);
+
+  document.getElementById('indTrust').textContent = v.cond && v.oidc ? 'OK' : 'BROKEN';
+  document.getElementById('indTrust').className = 'indicator ' + (v.cond && v.oidc ? 'ok' : 'bad');
+  document.getElementById('indSaPod').textContent = v.sa && v.pod ? 'OK' : 'BROKEN';
+  document.getElementById('indSaPod').className = 'indicator ' + (v.sa && v.pod ? 'ok' : 'bad');
+
+  // error / success display
+  const err = document.getElementById('errDisplay');
+  const succ = document.getElementById('successDisplay');
+  if (!v.oidc) {
+    err.classList.add('visible'); succ.classList.remove('visible');
+    document.getElementById('errTitle').textContent = 'AWS STS error: InvalidIdentityToken';
+    document.getElementById('errBody').innerHTML = `<code style="color:#ffaaaa;">An error occurred (InvalidIdentityToken) when calling the AssumeRoleWithWebIdentity operation: No OpenIDConnect provider found in your account for ${oidcUrl()}</code><br><br>Fix: <code style="color:#ffb74d;">eksctl utils associate-iam-oidc-provider --cluster=${S.cluster} --approve</code>`;
+  } else if (!v.aud) {
+    err.classList.add('visible'); succ.classList.remove('visible');
+    document.getElementById('errTitle').textContent = 'AWS STS error: InvalidIdentityToken';
+    document.getElementById('errBody').innerHTML = `<code style="color:#ffaaaa;">An error occurred (InvalidIdentityToken) when calling the AssumeRoleWithWebIdentity operation: Incorrect token audience</code><br><br>Trust policy expects <code style="color:#ffb74d;">aud=sts.amazonaws.com</code> but got <code style="color:#ff4c4c;">aud=${S.trustAud}</code>`;
+  } else if (!v.sub) {
+    err.classList.add('visible'); succ.classList.remove('visible');
+    document.getElementById('errTitle').textContent = 'AWS STS error: NotAuthorized';
+    document.getElementById('errBody').innerHTML = `<code style="color:#ffaaaa;">An error occurred (AccessDenied) when calling the AssumeRoleWithWebIdentity operation: Not authorized to perform sts:AssumeRoleWithWebIdentity</code><br><br>Token's sub: <code style="color:#ff4c4c;">${actualSub()}</code><br>Trust policy expects: <code style="color:#6db33f;">${expectedSub()}</code>`;
+  } else if (!v.pod) {
+    err.classList.add('visible'); succ.classList.remove('visible');
+    document.getElementById('errTitle').textContent = 'Pod misconfiguration';
+    document.getElementById('errBody').innerHTML = `Pod's <code style="color:#ffb74d;">spec.serviceAccountName=${S.podSaName}</code> in namespace <code style="color:#ffb74d;">${S.podNamespace}</code> doesn't match the IRSA-annotated SA <code style="color:#6db33f;">${S.saName}</code> in <code style="color:#6db33f;">${S.saNamespace}</code>. Pod will use the default SA without the role-arn annotation — webhook won't inject the projected token, SDK falls back to no credentials.`;
+  } else if (v.overpermissive) {
+    err.classList.add('visible'); succ.classList.remove('visible');
+    document.getElementById('errTitle').textContent = '⚠ Security finding: over-permissive trust policy';
+    document.getElementById('errBody').innerHTML = `Trust policy uses <code style="color:#ff4c4c;">StringLike</code> with a wildcard. Any SA matching the pattern <code style="color:#ff4c4c;">${expectedSub()}</code> can assume this role — including ones in other namespaces or applications you didn't intend.<br><br>Fix: switch to <code style="color:#6db33f;">StringEquals</code> with the exact <code>system:serviceaccount:NS:NAME</code> value.`;
+  } else {
+    err.classList.remove('visible'); succ.classList.add('visible');
+  }
+}
+
+function highlightLink(name) {
+  ['linkOidc', 'linkTrust', 'linkSa', 'linkPod'].forEach(id => document.getElementById(id).classList.remove('selected'));
+  if (name === 'oidc') document.getElementById('linkOidc').classList.add('selected');
+  if (name === 'trust') document.getElementById('linkTrust').classList.add('selected');
+  if (name === 'sa') document.getElementById('linkSa').classList.add('selected');
+  if (name === 'pod') document.getElementById('linkPod').classList.add('selected');
+}
+
+// =================== SECTION 3: TOKEN EXCHANGE FLOW ===================
+const FLOW_STEPS = [
+  {
+    title: 'Pod scheduled · webhook injects',
+    term: [
+      { c: 'term-comment', t: '# kube-apiserver receives Pod create request' },
+      { c: 'term-prompt', t: '$ kubectl apply -f pod.yaml' },
+      { c: 'term-resp',   t: 'pod/app-pod created' },
+      { c: 'term-comment',t: '# pod-identity-webhook (mutating admission) intercepts' },
+      { c: 'term-cmd',    t: 'webhook → injecting AWS_ROLE_ARN, AWS_WEB_IDENTITY_TOKEN_FILE' },
+      { c: 'term-cmd',    t: 'webhook → mounting projected SA token volume' },
+    ]
+  },
+  {
+    title: 'SDK reads env',
+    term: [
+      { c: 'term-comment', t: '# Inside the pod, AWS SDK chain reads env vars' },
+      { c: 'term-resp',    t: 'AWS_ROLE_ARN=arn:aws:iam::ACCT:role/AppDynamoDBRole' },
+      { c: 'term-resp',    t: 'AWS_WEB_IDENTITY_TOKEN_FILE=/var/run/secrets/eks.amazonaws.com/serviceaccount/token' },
+    ]
+  },
+  {
+    title: 'Token loaded from file',
+    term: [
+      { c: 'term-cmd',    t: 'SDK → reading /var/run/secrets/eks.amazonaws.com/serviceaccount/token' },
+      { c: 'term-resp',   t: 'eyJhbGciOiJSUzI1NiIs...{payload}...{signature}' },
+      { c: 'term-comment',t: '# Token TTL: 1 hour. Auto-rotated by kubelet at 80%.' },
+    ]
+  },
+  {
+    title: 'POST sts.amazonaws.com',
+    term: [
+      { c: 'term-cmd',  t: 'POST https://sts.amazonaws.com/' },
+      { c: 'term-resp', t: 'Action=AssumeRoleWithWebIdentity' },
+      { c: 'term-resp', t: 'RoleArn=arn:aws:iam::ACCT:role/AppDynamoDBRole' },
+      { c: 'term-resp', t: 'WebIdentityToken=eyJhbGc...' },
+    ]
+  },
+  {
+    title: 'STS verifies JWT signature',
+    term: [
+      { c: 'term-comment', t: '# STS fetches JWKS from cluster OIDC issuer' },
+      { c: 'term-cmd',     t: 'GET https://oidc.eks.us-east-1.amazonaws.com/id/EXAMPLE/keys' },
+      { c: 'term-resp',    t: '200 OK · public keys for token verification' },
+      { c: 'term-cmd',     t: 'verifying RS256 signature with kid=...' },
+    ]
+  },
+  {
+    title: 'STS checks trust policy',
+    term: [
+      { c: 'term-comment', t: '# Match token claims against role trust policy conditions' },
+      { c: 'term-resp',    t: 'token.sub  = system:serviceaccount:default:app-sa' },
+      { c: 'term-resp',    t: 'policy.sub = system:serviceaccount:default:app-sa  ✓' },
+      { c: 'term-resp',    t: 'token.aud  = sts.amazonaws.com  ✓' },
+    ]
+  },
+  {
+    title: 'Receive temporary credentials',
+    term: [
+      { c: 'term-resp',    t: '<AssumeRoleWithWebIdentityResult>' },
+      { c: 'term-key',     t: '  AccessKeyId: ASIAEXAMPLE...' },
+      { c: 'term-key',     t: '  SecretAccessKey: ********' },
+      { c: 'term-key',     t: '  SessionToken: FwoGZXIvYXdzE...' },
+      { c: 'term-key',     t: '  Expiration: 2026-05-07T01:23:45Z' },
+      { c: 'term-resp',    t: '</AssumeRoleWithWebIdentityResult>' },
+    ]
+  },
+  {
+    title: 'SDK signs DynamoDB call (SigV4)',
+    term: [
+      { c: 'term-comment', t: '# AWS SDK signs the API call with temp credentials' },
+      { c: 'term-cmd',     t: 'Authorization: AWS4-HMAC-SHA256 Credential=ASIA...' },
+      { c: 'term-cmd',     t: 'X-Amz-Security-Token: FwoGZXIvYXdzE...' },
+    ]
+  },
+  {
+    title: 'DynamoDB GetItem',
+    term: [
+      { c: 'term-cmd',  t: 'POST https://dynamodb.us-east-1.amazonaws.com/' },
+      { c: 'term-resp', t: 'X-Amz-Target: DynamoDB_20120810.GetItem' },
+      { c: 'term-resp', t: '{ "TableName": "Users", "Key": { "id": { "N": "42" } } }' },
+      { c: 'term-ok',   t: '200 OK · { "Item": { "id": { "N": "42" }, "name": { "S": "Alice" } } }' },
+      { c: 'term-comment', t: '# ✓ End-to-end IRSA flow complete' },
+    ]
+  },
+];
+
+function detectFlowFailure() {
+  const v = validate();
+  if (!v.oidc) return { atStep: 5, code: 'InvalidIdentityToken', msg: 'No OpenIDConnect provider found' };
+  if (!v.aud) return { atStep: 6, code: 'InvalidIdentityToken', msg: 'Incorrect token audience' };
+  if (!v.sub) return { atStep: 6, code: 'AccessDenied', msg: 'Not authorized to perform sts:AssumeRoleWithWebIdentity' };
+  if (!v.pod) return { atStep: 1, code: 'WebhookSkipped', msg: 'Pod uses different SA — webhook did not inject credentials' };
+  return null;
+}
+
+function setNodeStates(activeIdx, allowedRange) {
+  const failure = S.flowFailure;
+  for (let i = 0; i < 9; i++) {
+    const node = document.getElementById('fn' + (i + 1));
+    node.classList.remove('active', 'success', 'error');
+    if (failure && i + 1 === failure.atStep && activeIdx >= failure.atStep - 1) {
+      node.classList.add('error');
+    } else if (i + 1 === activeIdx + 1 && (!failure || activeIdx + 1 < failure.atStep)) {
+      node.classList.add('active');
+    } else if (i + 1 < activeIdx + 1 && (!failure || i + 1 < failure.atStep)) {
+      node.classList.add('success');
+    }
+  }
+}
+
+function appendTerm(term) {
+  const el = document.getElementById('flowTerm');
+  term.forEach(line => {
+    const d = document.createElement('div');
+    d.className = 'term-line ' + line.c;
+    d.textContent = line.t;
+    el.appendChild(d);
+  });
+  el.scrollTop = el.scrollHeight;
+}
+
+function termStepMarker(idx, title) {
+  const el = document.getElementById('flowTerm');
+  const d = document.createElement('div');
+  d.className = 'term-line term-step-marker';
+  d.textContent = `── Step ${idx + 1}: ${title} ──`;
+  el.appendChild(d);
+}
+
+function termFailure(failure) {
+  const el = document.getElementById('flowTerm');
+  const d = document.createElement('div');
+  d.className = 'term-line term-fail';
+  d.textContent = `✗ FAILED: ${failure.code} — ${failure.msg}`;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+function clearTerm() {
+  document.getElementById('flowTerm').innerHTML = '<div class="term-line term-comment"># Press "Auto-play" or "Step ▶" to start the token exchange</div>';
+}
+
+function stepFlow() {
+  if (S.flowStep === 0) S.flowFailure = detectFlowFailure();
+  if (S.flowStep >= 9) return;
+  const idx = S.flowStep;
+  const step = FLOW_STEPS[idx];
+  termStepMarker(idx, step.title);
+  appendTerm(step.term);
+  setNodeStates(idx, idx);
+  S.flowStep += 1;
+  if (S.flowFailure && idx + 1 === S.flowFailure.atStep) {
+    setTimeout(() => { termFailure(S.flowFailure); S.flowAuto = false; }, 400);
+  }
+  if (S.flowStep >= 9 && !S.flowFailure) {
+    setTimeout(() => {
+      const el = document.getElementById('flowTerm');
+      const d = document.createElement('div');
+      d.className = 'term-line term-ok';
+      d.textContent = '✓ End-to-end IRSA token exchange complete';
+      el.appendChild(d);
+    }, 300);
+  }
+}
+
+function startFlow() {
+  if (S.flowStep >= 9 || (S.flowFailure && S.flowStep >= S.flowFailure.atStep)) resetFlow();
+  S.flowAuto = true;
+  function tick() {
+    if (!S.flowAuto) return;
+    if (S.flowStep >= 9) { S.flowAuto = false; return; }
+    if (S.flowFailure && S.flowStep >= S.flowFailure.atStep) { S.flowAuto = false; return; }
+    stepFlow();
+    setTimeout(tick, 900 / S.flowSpeed);
+  }
+  tick();
+}
+
+function resetFlow() {
+  S.flowStep = 0;
+  S.flowAuto = false;
+  S.flowFailure = null;
+  setNodeStates(-1, -1);
+  clearTerm();
+}
+
+// =================== SECTION 4: JWT INSPECTOR ===================
+function setJwtView(view) {
+  S.jwtView = view;
+  document.getElementById('jwtBtnDecoded').classList.toggle('active', view === 'decoded');
+  document.getElementById('jwtBtnEncoded').classList.toggle('active', view === 'encoded');
+  document.getElementById('jwtDecodedView').style.display = view === 'decoded' ? 'block' : 'none';
+  document.getElementById('jwtEncodedView').style.display = view === 'encoded' ? 'block' : 'none';
+  renderJwt();
+}
+
+function renderJwt() {
+  S.jwtIss = `https://${oidcUrl()}`;
+  document.getElementById('iJwtIss').value = S.jwtIss;
+  if (document.activeElement.id !== 'iJwtSub') document.getElementById('iJwtSub').value = S.jwtSub;
+  if (document.activeElement.id !== 'iJwtAud') document.getElementById('iJwtAud').value = S.jwtAud;
+  const now = Math.floor(Date.now() / 1000);
+  document.getElementById('iJwtIat').value = now - 120;
+  document.getElementById('iJwtExp').value = now + 3540;
+  document.getElementById('iJwtKubeNs').value = S.saNamespace;
+
+  // match against trust policy
+  const subMatch = S.trustCondition === 'StringEquals'
+    ? S.jwtSub === expectedSub()
+    : matchStringLike(expectedSub(), S.jwtSub);
+  const audMatch = S.jwtAud === S.trustAud && S.trustAud === 'sts.amazonaws.com';
+  const issMatch = S.oidcRegistered && S.jwtIss.includes(oidcUrl());
+
+  const setRow = (rowSelector, ok) => {
+    const row = document.querySelectorAll(rowSelector);
+    row.forEach(el => {
+      el.classList.remove('match', 'mismatch', 'neutral');
+      el.classList.add(ok ? 'match' : 'mismatch');
+    });
+  };
+  document.getElementById('iJwtSub').parentElement.className = 'jwt-claim-row ' + (subMatch ? 'match' : 'mismatch');
+  document.getElementById('iJwtAud').parentElement.className = 'jwt-claim-row ' + (audMatch ? 'match' : 'mismatch');
+  document.getElementById('iJwtIss').parentElement.className = 'jwt-claim-row ' + (issMatch ? 'match' : 'mismatch');
+
+  document.getElementById('resJwtSub').textContent = subMatch ? '✓' : '✗';
+  document.getElementById('resJwtAud').textContent = audMatch ? '✓' : '✗';
+  document.getElementById('resJwtIss').textContent = issMatch ? '✓' : '✗';
+
+  const allMatch = subMatch && audMatch && issMatch;
+  document.getElementById('indJwt').textContent = allMatch ? 'TOKEN VALID' : 'WILL BE REJECTED';
+  document.getElementById('indJwt').className = 'indicator ' + (allMatch ? 'ok' : 'bad');
+
+  // policy display with highlights
+  const policyDisplay = `{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": {
+      "Federated": "arn:aws:iam::${S.accountId}:oidc-provider/${oidcUrl()}"
+    },
+    "Action": "sts:AssumeRoleWithWebIdentity",
+    "Condition": {
+      "${S.trustCondition}": {
+        "${oidcUrl()}:sub": <span class="${subMatch ? 'pol-match' : 'pol-mismatch'}">"${expectedSub()}"</span>,
+        "${oidcUrl()}:aud": <span class="${audMatch ? 'pol-match' : 'pol-mismatch'}">"${S.trustAud}"</span>
+      }
+    }
+  }]
+}`;
+  document.getElementById('policyDisplay').innerHTML = policyDisplay;
+  document.getElementById('indPol').textContent = (subMatch && audMatch) ? 'POLICY OK' : 'NO MATCH';
+  document.getElementById('indPol').className = 'indicator ' + ((subMatch && audMatch) ? 'ok' : 'bad');
+
+  // encoded view
+  if (S.jwtView === 'encoded') {
+    const header = btoa(JSON.stringify({ alg: 'RS256', kid: 'abc123', typ: 'JWT' })).replace(/=/g, '');
+    const payload = btoa(JSON.stringify({
+      iss: S.jwtIss, sub: S.jwtSub, aud: S.jwtAud,
+      exp: now + 3540, iat: now - 120,
+      'kubernetes.io': { namespace: S.saNamespace, serviceaccount: { name: S.saName } }
+    })).replace(/=/g, '');
+    const sig = 'MEUCIQDxK_signed_by_eks_oidc_issuer_private_key_abc123_xyz789MEYCIQ==';
+    document.getElementById('jwtEncodedString').innerHTML =
+      `<span class="jwt-h">${header}</span><span class="jwt-dot">.</span><span class="jwt-p">${payload}</span><span class="jwt-dot">.</span><span class="jwt-s">${sig}</span>`;
+  }
+
+  // match result
+  const mr = document.getElementById('matchResult');
+  if (allMatch) {
+    mr.className = 'match-result success';
+    mr.textContent = '✓ Token claims satisfy all trust policy conditions — STS will return temporary credentials';
+  } else {
+    mr.className = 'match-result fail';
+    const reasons = [];
+    if (!subMatch) reasons.push(`sub mismatch (token: ${S.jwtSub} ≠ policy: ${expectedSub()})`);
+    if (!audMatch) reasons.push(`aud mismatch (token: ${S.jwtAud} ≠ policy: ${S.trustAud})`);
+    if (!issMatch) reasons.push('OIDC issuer not registered');
+    mr.innerHTML = '✗ STS will reject this token<br><span style="font-size:11px; font-weight:400;">' + reasons.join(' · ') + '</span>';
+  }
+}
+
+// =================== SECTION 5: PITFALL LAB ===================
+const PITFALLS = [
+  {
+    id: 1,
+    title: 'Case 1 — DynamoDB AccessDenied',
+    symptom: `Pod logs:\n\n2026-05-07 14:22:17 ERROR  An error occurred (AccessDenied) when calling the AssumeRoleWithWebIdentity operation: Not authorized to perform sts:AssumeRoleWithWebIdentity\n\nbotocore.exceptions.ClientError: An error occurred (AccessDenied) when calling the AssumeRoleWithWebIdentity operation`,
+    panels: [
+      { title: 'kubectl describe sa app-sa -n production', rows: [
+        { k: 'Name', v: 'app-sa', cls: '' },
+        { k: 'Namespace', v: 'production', cls: 'v-warn' },
+        { k: 'Labels', v: '<none>', cls: '' },
+        { k: 'Annotations', v: 'eks.amazonaws.com/role-arn:', cls: '' },
+        { k: '  ', v: '  arn:aws:iam::111122223333:role/AppRole', cls: '' },
+      ]},
+      { title: 'aws iam get-role --role-name AppRole', rows: [
+        { k: 'Trust policy condition (StringEquals):', v: '', cls: '' },
+        { k: '  oidc...:sub', v: '"system:serviceaccount:default:app-sa"', cls: 'v-warn' },
+        { k: '  oidc...:aud', v: '"sts.amazonaws.com"', cls: 'v-ok' },
+      ]},
+    ],
+    choices: [
+      { text: 'IAM role is missing the dynamodb:GetItem permission policy', correct: false },
+      { text: 'Trust policy expects sub system:serviceaccount:default:app-sa, but pod\'s SA is in the production namespace', correct: true },
+      { text: 'OIDC provider not registered in IAM', correct: false },
+      { text: 'Audience claim is wrong', correct: false },
+    ],
+    explanation: `<strong>Root cause:</strong> The trust policy's <code>sub</code> condition is hardcoded to <code>system:serviceaccount:default:app-sa</code>, but the SA was deployed to the <code>production</code> namespace. STS rejects the AssumeRole call because the JWT's <code>sub</code> claim (<code>system:serviceaccount:production:app-sa</code>) doesn't match.<br><br><strong>Fix:</strong> Update the trust policy condition to <code>system:serviceaccount:production:app-sa</code>, or move the SA back to <code>default</code>. This is the #1 IRSA bug — happens almost every time a team copy-pastes a role from one namespace to another.`
+  },
+  {
+    id: 2,
+    title: 'Case 2 — STS InvalidIdentityToken',
+    symptom: `Pod logs:\n\nbotocore.exceptions.ClientError: An error occurred (InvalidIdentityToken) when calling the AssumeRoleWithWebIdentity operation: No OpenIDConnect provider found in your account for https://oidc.eks.us-east-1.amazonaws.com/id/A1B2C3D4E5F6...`,
+    panels: [
+      { title: 'kubectl exec app-pod -- env | grep AWS', rows: [
+        { k: 'AWS_ROLE_ARN=', v: 'arn:aws:iam::111122223333:role/AppRole', cls: 'v-ok' },
+        { k: 'AWS_WEB_IDENTITY_TOKEN_FILE=', v: '/var/run/secrets/.../token', cls: 'v-ok' },
+      ]},
+      { title: 'aws iam list-open-id-connect-providers', rows: [
+        { k: 'OpenIDConnectProviderList:', v: '[]', cls: 'v-bad' },
+        { k: '  ', v: '<empty list>', cls: 'v-warn' },
+      ]},
+    ],
+    choices: [
+      { text: 'The pod is missing the projected SA token volume', correct: false },
+      { text: 'The IAM role doesn\'t exist', correct: false },
+      { text: 'The cluster\'s OIDC provider hasn\'t been added to IAM', correct: true },
+      { text: 'The token has expired', correct: false },
+    ],
+    explanation: `<strong>Root cause:</strong> The cluster has an OIDC issuer URL, but it was never registered as an Identity Provider in IAM. STS can't verify JWTs from issuers it doesn't know about.<br><br><strong>Fix:</strong> <code>eksctl utils associate-iam-oidc-provider --cluster=&lt;name&gt; --approve</code><br><br>This is a common bug after creating clusters via raw <code>aws eks create-cluster</code> instead of <code>eksctl</code>. eksctl does this step automatically; manual cluster creation does not.`
+  },
+  {
+    id: 3,
+    title: 'Case 3 — Incorrect token audience',
+    symptom: `Pod logs:\n\nbotocore.exceptions.ClientError: An error occurred (InvalidIdentityToken) when calling the AssumeRoleWithWebIdentity operation: Incorrect token audience`,
+    panels: [
+      { title: 'JWT decoded payload (paste at jwt.io)', rows: [
+        { k: 'sub', v: '"system:serviceaccount:default:app-sa"', cls: 'v-ok' },
+        { k: 'aud', v: '"my-custom-audience"', cls: 'v-bad' },
+        { k: 'iss', v: '"https://oidc.eks..."', cls: 'v-ok' },
+      ]},
+      { title: 'IAM trust policy', rows: [
+        { k: 'Condition.StringEquals:', v: '', cls: '' },
+        { k: '  oidc...:aud', v: '"sts.amazonaws.com"', cls: 'v-ok' },
+        { k: '  oidc...:sub', v: '"system:serviceaccount:default:app-sa"', cls: 'v-ok' },
+      ]},
+    ],
+    choices: [
+      { text: 'Trust policy is missing the sub condition', correct: false },
+      { text: 'Token aud claim is "my-custom-audience" but trust policy requires "sts.amazonaws.com"', correct: true },
+      { text: 'OIDC provider in IAM has the wrong client ID list', correct: false },
+      { text: 'JWT signature validation failed', correct: false },
+    ],
+    explanation: `<strong>Root cause:</strong> Someone manually created a projected token with a custom audience (e.g. for a different OIDC client), but IRSA trust policies hard-require <code>aud=sts.amazonaws.com</code>.<br><br><strong>Fix:</strong> Don't override the audience. The Pod Identity Webhook sets it correctly by default. If you're creating a custom <code>serviceAccountToken</code> projection, remove the custom <code>audience</code> field.<br><br>Also check the OIDC provider in IAM — its "Audience" list must include <code>sts.amazonaws.com</code>.`
+  },
+  {
+    id: 4,
+    title: 'Case 4 — Security audit finding',
+    symptom: `Security team report:\n\n⚠ FINDING: Production S3 bucket can be read from any pod in the EKS cluster, regardless of namespace or service account.\n\nA pod deployed to a sandbox namespace was able to read sensitive customer data via the production AppRole. Investigation showed the AssumeRoleWithWebIdentity call succeeded.`,
+    panels: [
+      { title: 'aws iam get-role --role-name AppRole (trust policy)', rows: [
+        { k: 'Condition.StringLike:', v: '', cls: 'v-bad' },
+        { k: '  oidc...:sub', v: '"system:serviceaccount:*:*"', cls: 'v-bad' },
+        { k: '  oidc...:aud', v: '"sts.amazonaws.com"', cls: 'v-ok' },
+      ]},
+      { title: 'JWT from compromised sandbox pod', rows: [
+        { k: 'sub', v: '"system:serviceaccount:sandbox:test-sa"', cls: 'v-warn' },
+        { k: 'aud', v: '"sts.amazonaws.com"', cls: 'v-ok' },
+      ]},
+    ],
+    choices: [
+      { text: 'OIDC issuer was compromised — rotate cluster OIDC provider', correct: false },
+      { text: 'Trust policy uses StringLike with wildcards in sub — any SA in any namespace matches', correct: true },
+      { text: 'Token signature validation is broken', correct: false },
+      { text: 'Pod was running as root and bypassed RBAC', correct: false },
+    ],
+    explanation: `<strong>Root cause:</strong> Trust policy uses <code>StringLike</code> with <code>system:serviceaccount:*:*</code> — this matches <em>any</em> SA in <em>any</em> namespace. A pod in the sandbox namespace satisfied the condition and was granted production permissions.<br><br><strong>Fix:</strong> Switch to <code>StringEquals</code> with the exact <code>system:serviceaccount:NS:SA</code> value. <code>StringLike</code> is a footgun — it's almost never the right choice for IRSA.<br><br>This pattern shows up surprisingly often in Terraform modules that try to make trust policies "reusable". Don't.`
+  },
+];
+
+function startPitfall(n) {
+  S.pitfallActive = n;
+  S.pitfallAnswered = false;
+  document.querySelectorAll('.scenario-buttons button').forEach(b => b.classList.remove('selected'));
+  document.getElementById('btnPit' + n).classList.add('selected');
+
+  const p = PITFALLS[n - 1];
+  let html = `<div class="scenario-display">`;
+  html += `<div class="scenario-symptom"><strong>Symptom — ${p.title}</strong>\n\n${p.symptom}</div>`;
+  html += `<div class="inspector-grid">`;
+  for (const panel of p.panels) {
+    html += `<div class="inspector-panel"><div class="ip-title">${panel.title}</div>`;
+    for (const r of panel.rows) {
+      html += `<div class="ip-row"><span class="k">${r.k}</span> <span class="${r.cls}">${r.v}</span></div>`;
+    }
+    html += `</div>`;
+  }
+  html += `</div>`;
+  html += `<div style="font-size:12px; color:#a78bfa; font-weight:700; margin: 8px 0 10px;">What's the root cause? Pick one:</div>`;
+  html += `<div class="choice-list">`;
+  p.choices.forEach((c, i) => {
+    html += `<button class="choice-btn" data-idx="${i}" onclick="answerPitfall(${i})">${String.fromCharCode(65 + i)}. ${c.text}</button>`;
+  });
+  html += `</div>`;
+  html += `<div class="diagnosis-result" id="diagResult"></div>`;
+  html += `</div>`;
+  document.getElementById('pitfallContainer').innerHTML = html;
+}
+
+function answerPitfall(idx) {
+  if (S.pitfallAnswered) return;
+  S.pitfallAnswered = true;
+  const p = PITFALLS[S.pitfallActive - 1];
+  const buttons = document.querySelectorAll('.choice-btn');
+  buttons.forEach((b, i) => {
+    b.disabled = true;
+    if (p.choices[i].correct) b.classList.add('correct');
+    else if (i === idx) b.classList.add('wrong');
+  });
+  const correct = p.choices[idx].correct;
+  const result = document.getElementById('diagResult');
+  result.className = 'diagnosis-result visible ' + (correct ? 'correct' : 'wrong');
+  result.innerHTML = `<h4>${correct ? '✓ Correct diagnosis' : '✗ Not quite — see the explanation below'}</h4>${p.explanation}`;
+}
+
+// =================== PRESETS ===================
+function preset(name) {
+  if (name === 'happy' || name === 'reset') {
+    Object.assign(S, {
+      cluster: 'production-cluster', region: 'us-east-1', accountId: '111122223333',
+      saName: 'app-sa', saNamespace: 'default',
+      roleName: 'AppDynamoDBRole',
+      trustNamespace: 'default', trustSaName: 'app-sa', trustAud: 'sts.amazonaws.com', trustCondition: 'StringEquals',
+      podSaName: 'app-sa', podNamespace: 'default',
+      oidcRegistered: true, jwtSub: 'system:serviceaccount:default:app-sa', jwtAud: 'sts.amazonaws.com',
+    });
+  } else if (name === 'wrong-ns') {
+    Object.assign(S, {
+      saNamespace: 'production', podNamespace: 'production',
+      trustNamespace: 'default',
+      jwtSub: 'system:serviceaccount:production:app-sa',
+      oidcRegistered: true, trustAud: 'sts.amazonaws.com', trustCondition: 'StringEquals',
+    });
+  } else if (name === 'missing-oidc') {
+    Object.assign(S, {
+      oidcRegistered: false,
+      saNamespace: 'default', podNamespace: 'default',
+      trustNamespace: 'default', trustAud: 'sts.amazonaws.com', trustCondition: 'StringEquals',
+      jwtSub: 'system:serviceaccount:default:app-sa',
+    });
+  } else if (name === 'wrong-aud') {
+    Object.assign(S, {
+      trustAud: 'my-custom-audience',
+      oidcRegistered: true,
+      saNamespace: 'default', podNamespace: 'default', trustNamespace: 'default', trustCondition: 'StringEquals',
+      jwtSub: 'system:serviceaccount:default:app-sa', jwtAud: 'sts.amazonaws.com',
+    });
+  } else if (name === 'overpermissive') {
+    Object.assign(S, {
+      trustCondition: 'StringLike', trustNamespace: '*', trustSaName: '*',
+      oidcRegistered: true, trustAud: 'sts.amazonaws.com',
+      saNamespace: 'sandbox', saName: 'test-sa', podSaName: 'test-sa', podNamespace: 'sandbox',
+      jwtSub: 'system:serviceaccount:sandbox:test-sa',
+    });
+  }
+  syncInputsFromState();
+  renderAll();
+  resetFlow();
+}
+
+// =================== INPUT WIRING ===================
+function syncInputsFromState() {
+  document.getElementById('iCluster').value = S.cluster;
+  document.getElementById('iRegion').value = S.region;
+  document.getElementById('iAccount').value = S.accountId;
+  document.getElementById('iNamespace').value = S.saNamespace;
+  document.getElementById('iSaName').value = S.saName;
+  document.getElementById('iRoleName').value = S.roleName;
+
+  document.getElementById('iOidcReg').value = String(S.oidcRegistered);
+  document.getElementById('iCondType').value = S.trustCondition;
+  document.getElementById('iTrustSub').value = expectedSub();
+  document.getElementById('iTrustAud').value = S.trustAud;
+  document.getElementById('iSaNs2').value = S.saNamespace;
+  document.getElementById('iSaName2').value = S.saName;
+  document.getElementById('iPodSa').value = S.podSaName;
+  document.getElementById('iPodNs').value = S.podNamespace;
+
+  document.getElementById('iOidcUrl').value = oidcArn();
+  document.getElementById('iSaAnno').value = roleArn();
+}
+
+function wireInputs() {
+  const onChange = (id, fn) => {
+    const el = document.getElementById(id);
+    el.addEventListener('input', () => { fn(el.value); renderAll(); });
+    el.addEventListener('change', () => { fn(el.value); renderAll(); });
+  };
+  onChange('iCluster', v => S.cluster = v);
+  onChange('iRegion', v => S.region = v);
+  onChange('iAccount', v => S.accountId = v);
+  onChange('iNamespace', v => { S.saNamespace = v; S.podNamespace = v; });
+  onChange('iSaName', v => { S.saName = v; S.podSaName = v; S.trustSaName = v; });
+  onChange('iRoleName', v => S.roleName = v);
+
+  onChange('iOidcReg', v => S.oidcRegistered = (v === 'true'));
+  onChange('iCondType', v => S.trustCondition = v);
+  document.getElementById('iTrustSub').addEventListener('input', () => {
+    const parts = document.getElementById('iTrustSub').value.split(':');
+    if (parts.length === 4 && parts[0] === 'system' && parts[1] === 'serviceaccount') {
+      S.trustNamespace = parts[2]; S.trustSaName = parts[3];
+    }
+    renderAll();
+  });
+  onChange('iTrustAud', v => S.trustAud = v);
+  onChange('iSaNs2', v => { S.saNamespace = v; });
+  onChange('iSaName2', v => { S.saName = v; S.trustSaName = (S.trustSaName === '*' ? '*' : v); });
+  onChange('iPodSa', v => S.podSaName = v);
+  onChange('iPodNs', v => S.podNamespace = v);
+
+  document.getElementById('iJwtSub').addEventListener('input', e => { S.jwtSub = e.target.value; renderJwt(); });
+  document.getElementById('iJwtAud').addEventListener('input', e => { S.jwtAud = e.target.value; renderJwt(); });
+
+  const speed = document.getElementById('iSpeed');
+  speed.addEventListener('input', () => {
+    S.flowSpeed = parseFloat(speed.value);
+    document.getElementById('vSpeed').textContent = S.flowSpeed.toFixed(1) + '×';
+  });
+}
+
+// =================== INIT ===================
+function renderAll() {
+  syncInputsFromState();
+  renderSetup();
+  renderChain();
+  validate();
+  renderJwt();
+}
+
+wireInputs();
+preset('happy');
+</script>
+
+<script src="cookie-consent.js"></script>
+</body>
+</html>
