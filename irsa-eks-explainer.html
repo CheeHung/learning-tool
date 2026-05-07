@@ -262,9 +262,25 @@ label { font-size: 11px; color: #aaa; }
 <h1>IRSA on EKS</h1>
 <p class="subtitle">IAM Roles for Service Accounts &middot; OIDC trust &middot; Token exchange &middot; All interactive</p>
 
+<!-- =================== WHAT IS IRSA =================== -->
+<div class="section">
+  <div class="section-title">What is IRSA and why does it exist? <span class="badge">click each option</span></div>
+  <div class="section-sub">
+    Your pod needs to call an AWS service (DynamoDB, S3, SES…). How does it prove to AWS who it is? Pick an approach below to see why it's good or bad.
+  </div>
+
+  <div style="display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap;" id="approachBtns">
+    <button class="btn-danger" onclick="showApproach('keys')">Option A — Hardcode AWS keys</button>
+    <button class="btn-warn"  onclick="showApproach('node')">Option B — EC2 Instance Role</button>
+    <button class="btn-green" onclick="showApproach('irsa')">Option C — IRSA ✅</button>
+  </div>
+
+  <div id="approachDisplay" class="panel" style="display:none; min-height:130px;"></div>
+</div>
+
 <!-- =================== OVERVIEW =================== -->
 <div class="section">
-  <div class="section-title">Why IRSA? <span class="badge">before vs after</span></div>
+  <div class="section-title">How bad is the shared node role? <span class="badge">before vs after</span></div>
   <div class="section-sub">
     Click a pod to see what AWS services it can reach. Before IRSA, every pod on the node shared the EC2 instance role — one breach meant full access to everything. IRSA gives each pod its own scoped IAM role.
   </div>
@@ -1415,6 +1431,61 @@ function wireInputs() {
     S.flowSpeed = parseFloat(speed.value);
     document.getElementById('vSpeed').textContent = S.flowSpeed.toFixed(1) + '×';
   });
+}
+
+// =================== WHAT IS IRSA ===================
+const APPROACHES = {
+  keys: {
+    verdict: 'bad',
+    title: '❌ Option A — Hardcoded AWS keys in env vars or K8s Secrets',
+    color: '#ff4c4c',
+    rows: [
+      { icon: '🔑', text: 'You create an IAM user, generate an access key, paste it into a K8s Secret or Deployment env var.' },
+      { icon: '⚠️', text: '<strong style="color:#ff4c4c">Problem 1:</strong> Keys don\'t expire. If leaked (git history, logs, kubectl describe), they work forever until manually rotated.' },
+      { icon: '⚠️', text: '<strong style="color:#ff4c4c">Problem 2:</strong> Key rotation is manual and painful — you must update every Deployment that uses it.' },
+      { icon: '⚠️', text: '<strong style="color:#ff4c4c">Problem 3:</strong> AWS best practice explicitly forbids long-lived static credentials in containers.' },
+      { icon: '📋', text: 'Still seen in legacy systems. IRSA replaces this completely — no IAM users, no static keys, credentials are temporary and auto-rotated.' },
+    ],
+  },
+  node: {
+    verdict: 'warn',
+    title: '⚠️ Option B — EC2 Instance Role (the pre-IRSA EKS approach)',
+    color: '#ffb74d',
+    rows: [
+      { icon: '🖥️', text: 'Every EC2 node in your cluster has a single IAM role. All pods on that node call the EC2 Instance Metadata Service (IMDS) to get credentials from that role.' },
+      { icon: '⚠️', text: '<strong style="color:#ffb74d">Problem 1: Shared blast radius.</strong> If your frontend pod is compromised, it has the same AWS access as your billing pod — because they run on the same node with the same role.' },
+      { icon: '⚠️', text: '<strong style="color:#ffb74d">Problem 2: Least privilege is impossible.</strong> You\'d have to give the node role every permission any pod might ever need — inevitably overpermissive.' },
+      { icon: '⚠️', text: '<strong style="color:#ffb74d">Problem 3: Audit trail is coarse.</strong> CloudTrail shows "NodeInstanceRole did X" — impossible to tell which pod actually made the call.' },
+      { icon: '✅', text: 'IRSA solves all three: each pod\'s SA maps to its own IAM role, credentials are pod-scoped, and CloudTrail shows the exact SA that called the API.' },
+    ],
+  },
+  irsa: {
+    verdict: 'good',
+    title: '✅ Option C — IRSA: IAM Roles for Service Accounts',
+    color: '#6db33f',
+    rows: [
+      { icon: '📛', text: '<strong style="color:#6db33f">What it is:</strong> A mechanism that lets a Kubernetes ServiceAccount assume an AWS IAM Role — so your pod gets temporary AWS credentials that are scoped to exactly what that pod needs.' },
+      { icon: '🔗', text: '<strong style="color:#6db33f">How it works:</strong> EKS acts as an OIDC identity provider. The pod is issued a signed JWT (projected ServiceAccount token). The AWS SDK exchanges this token at STS for short-lived credentials via <code style="color:#ffb74d;">AssumeRoleWithWebIdentity</code>.' },
+      { icon: '🔐', text: '<strong style="color:#6db33f">Security:</strong> Each pod only gets the permissions of its specific role. Credentials expire in 1 hour and auto-rotate. No static keys anywhere.' },
+      { icon: '📊', text: '<strong style="color:#6db33f">Audit:</strong> CloudTrail records the exact ServiceAccount (e.g. <code style="color:#ffb74d;">system:serviceaccount:payments:billing-sa</code>) that made every AWS API call.' },
+      { icon: '⬇️', text: 'Scroll down to see exactly how each piece is configured and how the token exchange works.' },
+    ],
+  },
+};
+
+function showApproach(key) {
+  const a = APPROACHES[key];
+  document.getElementById('approachDisplay').style.display = 'block';
+  const borderColor = a.verdict === 'good' ? '#6db33f' : a.verdict === 'warn' ? '#ffb74d' : '#ff4c4c';
+  let html = `<div style="font-size:13px; font-weight:700; color:${a.color}; margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid #2a3a5e;">${a.title}</div>`;
+  for (const row of a.rows) {
+    html += `<div style="display:flex; gap:12px; margin-bottom:10px; font-size:12px; line-height:1.6; color:#c8d0e0;">
+      <span style="font-size:18px; flex-shrink:0;">${row.icon}</span>
+      <span>${row.text}</span>
+    </div>`;
+  }
+  document.getElementById('approachDisplay').innerHTML = html;
+  document.getElementById('approachDisplay').style.borderColor = borderColor;
 }
 
 // =================== OVERVIEW ===================
