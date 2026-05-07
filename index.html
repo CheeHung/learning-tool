@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interactive Learning Tools</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #0c0f1a;
+  color: #e8eaf6;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+header {
+  text-align: center;
+  padding: 80px 20px 40px;
+  max-width: 700px;
+}
+
+header h1 {
+  font-size: 2.8rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #00e5a0, #00b8d4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 16px;
+}
+
+header p {
+  color: #7986a8;
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 28px;
+  max-width: 900px;
+  width: 100%;
+  padding: 20px 24px 80px;
+}
+
+.card {
+  background: #151929;
+  border: 1px solid #2a3150;
+  border-radius: 16px;
+  padding: 36px 32px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.2s, border-color 0.3s, box-shadow 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 16px 16px 0 0;
+  transition: opacity 0.3s;
+  opacity: 0.7;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+.card:hover::before {
+  opacity: 1;
+}
+
+.card-kafka::before { background: linear-gradient(90deg, #00d4aa, #48dbfb); }
+.card-kafka:hover { border-color: #00d4aa; }
+
+.card-ratelimit::before { background: linear-gradient(90deg, #00e5a0, #ffb74d); }
+.card-ratelimit:hover { border-color: #00e5a0; }
+
+.card-icon {
+  font-size: 2.4rem;
+  margin-bottom: 16px;
+  display: block;
+}
+
+.card h2 {
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.card p {
+  color: #7986a8;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.card-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tag {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: #1c2238;
+  color: #7986a8;
+  border: 1px solid #2a3150;
+}
+
+.card-arrow {
+  position: absolute;
+  top: 36px;
+  right: 32px;
+  font-size: 1.2rem;
+  color: #2a3150;
+  transition: color 0.3s, transform 0.3s;
+}
+
+.card:hover .card-arrow {
+  color: #00e5a0;
+  transform: translateX(4px);
+}
+
+footer {
+  padding: 20px;
+  color: #3a4060;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+@media (max-width: 500px) {
+  header h1 { font-size: 2rem; }
+  .cards { grid-template-columns: 1fr; }
+  header { padding: 50px 20px 30px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Interactive Learning Tools</h1>
+  <p>Hands-on simulators to explore distributed systems and cloud concepts. Pick a topic and start experimenting.</p>
+</header>
+
+<div class="cards">
+
+  <a href="kafka-playground.html" class="card card-kafka">
+    <span class="card-arrow">&rarr;</span>
+    <span class="card-icon">📨</span>
+    <h2>Kafka Playground</h2>
+    <p>Visualize producers, partitions, consumer groups, and message flow in an interactive Kafka cluster simulation.</p>
+    <div class="card-tags">
+      <span class="tag">Kafka</span>
+      <span class="tag">Streaming</span>
+      <span class="tag">Partitions</span>
+      <span class="tag">Consumer Groups</span>
+    </div>
+  </a>
+
+  <a href="rate-limit-explainer.html" class="card card-ratelimit">
+    <span class="card-arrow">&rarr;</span>
+    <span class="card-icon">🚦</span>
+    <h2>Rate Limit Simulator</h2>
+    <p>Experiment with AWS API Gateway rate limiting — token buckets, throttling, and burst behavior in real time.</p>
+    <div class="card-tags">
+      <span class="tag">AWS</span>
+      <span class="tag">API Gateway</span>
+      <span class="tag">Rate Limiting</span>
+      <span class="tag">Token Bucket</span>
+    </div>
+  </a>
+
+</div>
+
+<footer>Interactive Learning Tools</footer>
+
+</body>
+</html>
