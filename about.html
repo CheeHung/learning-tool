@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>About — Interactive Distributed Systems Learning Tools</title>
+<meta name="description" content="Free interactive simulators that teach distributed systems concepts through hands-on experimentation. No sign-up required. Built for developers who learn by doing.">
+<meta name="robots" content="index, follow">
+<meta property="og:type" content="website">
+<meta property="og:title" content="About — Interactive Distributed Systems Learning Tools">
+<meta property="og:description" content="Free interactive simulators that teach distributed systems concepts through hands-on experimentation. No sign-up required.">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0c0f1a; color: #e8eaf6; min-height: 100vh; padding: 20px; }
+.top-bar { display: flex; justify-content: space-between; align-items: center; max-width: 780px; margin: 0 auto 32px; }
+a.back { color: #888; font-size: 13px; text-decoration: none; }
+a.back:hover { color: #00e5a0; }
+.container { max-width: 780px; margin: 0 auto; padding-bottom: 80px; }
+h1 { font-size: 2.2rem; font-weight: 700; background: linear-gradient(135deg, #00e5a0, #00b8d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 16px; }
+h2 { font-size: 1.15rem; font-weight: 600; color: #00e5a0; margin: 36px 0 10px; }
+p { color: #9098b0; line-height: 1.8; font-size: 15px; margin-bottom: 14px; }
+.lead { font-size: 1.1rem; color: #c8d0e0; line-height: 1.8; margin-bottom: 28px; }
+a { color: #00e5a0; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.divider { border: none; border-top: 1px solid #2a3150; margin: 32px 0; }
+.tools-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 16px; }
+.tool-card { background: #151929; border: 1px solid #2a3150; border-radius: 12px; padding: 20px; text-decoration: none; color: inherit; transition: border-color 0.2s, transform 0.2s; display: block; }
+.tool-card:hover { border-color: #00e5a0; transform: translateY(-2px); text-decoration: none; }
+.tool-icon { font-size: 1.6rem; margin-bottom: 8px; }
+.tool-name { font-size: 1rem; font-weight: 600; color: #e8eaf6; margin-bottom: 6px; }
+.tool-desc { font-size: 13px; color: #7986a8; line-height: 1.5; }
+.principle { background: #151929; border-left: 3px solid #00e5a0; border-radius: 0 8px 8px 0; padding: 14px 18px; margin-bottom: 12px; }
+.principle p { margin: 0; color: #c8d0e0; font-size: 14px; }
+.principle strong { color: #00e5a0; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <a href="index.html" class="back">&larr; Back to tools</a>
+</div>
+
+<div class="container">
+  <h1>About this site</h1>
+  <p class="lead">A collection of free, interactive learning tools that teach distributed systems and cloud concepts through hands-on experimentation — not slides, not walls of text.</p>
+
+  <hr class="divider">
+
+  <h2>Why it exists</h2>
+  <p>Most developer learning resources explain <em>what</em> something does but never let you actually see it happen. Reading about Kafka consumer group rebalancing is one thing. Watching partitions reassign in real time as you add and remove consumers is something else entirely.</p>
+  <p>Every tool on this site is built around one question: <strong>what's the thing you need to see move to truly understand it?</strong> That's the aha moment each simulator is designed around.</p>
+
+  <h2>How the tools work</h2>
+  <div class="principle">
+    <p><strong>Hands-on first.</strong> Every section has something you can control — a slider, a button to trigger a failure, a parameter to tune. No passive reading.</p>
+  </div>
+  <div class="principle">
+    <p><strong>Failure scenarios included.</strong> The happy path teaches you nothing memorable. Every tool has a preset that shows what breaks, and why it matters in production.</p>
+  </div>
+  <div class="principle">
+    <p><strong>Comparison by default.</strong> Concepts are only meaningful in contrast. MVC threads vs WebFlux event loop. JVM DNS cache vs Netty DNS cache. You always see both sides simultaneously.</p>
+  </div>
+  <div class="principle">
+    <p><strong>No sign-up, no tracking, no paywall.</strong> Open the page, start learning.</p>
+  </div>
+
+  <h2>Available tools</h2>
+  <div class="tools-grid">
+    <a href="kafka-playground.html" class="tool-card">
+      <div class="tool-icon">📨</div>
+      <div class="tool-name">Kafka Playground</div>
+      <div class="tool-desc">Producers, partitions, consumer groups, offset tracking, and partition rebalancing — all animated in real time.</div>
+    </a>
+    <a href="rate-limit-explainer.html" class="tool-card">
+      <div class="tool-icon">🚦</div>
+      <div class="tool-name">Rate Limit Simulator</div>
+      <div class="tool-desc">Token bucket algorithm, AWS API Gateway throttling, and burst capacity — adjust the settings and watch requests get rejected.</div>
+    </a>
+    <a href="redis-cluster-explainer.html" class="tool-card">
+      <div class="tool-icon">🧠</div>
+      <div class="tool-name">Redis Cluster Explainer</div>
+      <div class="tool-desc">Hash slot sharding, master-replica replication, gossip-based failover with quorum voting, and MOVED/ASK redirects.</div>
+    </a>
+    <a href="spring-mvc-vs-webflux.html" class="tool-card">
+      <div class="tool-icon">🌱</div>
+      <div class="tool-name">Spring MVC vs WebFlux</div>
+      <div class="tool-desc">Side-by-side load test. Watch the thread pool saturate in MVC while WebFlux's event loop keeps up — then accidentally block it.</div>
+    </a>
+    <a href="lettuce-dns-explainer.html" class="tool-card">
+      <div class="tool-icon">🔍</div>
+      <div class="tool-name">Lettuce DNS Resolution</div>
+      <div class="tool-desc">JVM vs Netty DNS resolver, failover with stale cache, EKS CoreDNS query flow, and the FQDN ndots:5 query explosion.</div>
+    </a>
+  </div>
+
+  <hr class="divider">
+
+  <h2>Suggest a topic</h2>
+  <p>Got a distributed systems or cloud concept you'd like to see visualised? Topics being considered: circuit breaker pattern, consistent hashing, Kubernetes pod scheduling, OAuth 2.0 flow, database indexing, connection pooling.</p>
+  <p>Reach out at <a href="mailto:hello@example.com">hello@example.com</a> <!-- replace with your email --></p>
+</div>
+
+<script src="cookie-consent.js"></script>
+</body>
+</html>

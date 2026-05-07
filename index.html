@@ -3,7 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Interactive Learning Tools</title>
+<title>Interactive Distributed Systems Learning Tools — Learn by Doing</title>
+<meta name="description" content="Free interactive simulators for developers. Learn Kafka, Redis Cluster, Spring WebFlux, Lettuce DNS resolution, and API rate limiting through hands-on visualizations — not slides.">
+<meta name="keywords" content="distributed systems tutorial, kafka simulator, redis cluster explained, spring webflux vs mvc, interactive learning, developer tools, system design">
+<meta name="robots" content="index, follow">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Interactive Distributed Systems Learning Tools — Learn by Doing">
+<meta property="og:description" content="Free interactive simulators for developers. Learn Kafka, Redis Cluster, Spring WebFlux, and more through hands-on visualizations — not slides.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Interactive Distributed Systems Learning Tools — Learn by Doing">
+<meta name="twitter:description" content="Free interactive simulators for developers. Learn Kafka, Redis Cluster, Spring WebFlux, and more through hands-on visualizations.">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -86,6 +95,15 @@ header p {
 
 .card-ratelimit::before { background: linear-gradient(90deg, #00e5a0, #ffb74d); }
 .card-ratelimit:hover { border-color: #00e5a0; }
+
+.card-redis::before { background: linear-gradient(90deg, #ff4c4c, #b388ff); }
+.card-redis:hover { border-color: #ff4c4c; }
+
+.card-spring::before { background: linear-gradient(90deg, #6db33f, #ffb74d); }
+.card-spring:hover { border-color: #6db33f; }
+
+.card-dns::before { background: linear-gradient(90deg, #48dbfb, #b388ff); }
+.card-dns:hover { border-color: #48dbfb; }
 
 .card-icon {
   font-size: 2.4rem;
@@ -184,9 +202,55 @@ footer {
     </div>
   </a>
 
+  <a href="redis-cluster-explainer.html" class="card card-redis">
+    <span class="card-arrow">&rarr;</span>
+    <span class="card-icon">🧠</span>
+    <h2>Redis Cluster Explainer</h2>
+    <p>Visualize sharding, replication, and failover. Hash slots, MOVED/ASK redirects, gossip-based promotion, and dynamicRefreshSources.</p>
+    <div class="card-tags">
+      <span class="tag">Redis</span>
+      <span class="tag">Sharding</span>
+      <span class="tag">Replication</span>
+      <span class="tag">Failover</span>
+    </div>
+  </a>
+
+  <a href="lettuce-dns-explainer.html" class="card card-dns">
+    <span class="card-arrow">&rarr;</span>
+    <span class="card-icon">🔍</span>
+    <h2>Lettuce DNS Resolution</h2>
+    <p>JVM vs Netty DNS resolver — blocking vs async, TTL caching, EKS CoreDNS flow, and the FQDN/ndots query explosion. All interactive.</p>
+    <div class="card-tags">
+      <span class="tag">Lettuce</span>
+      <span class="tag">DNS</span>
+      <span class="tag">EKS</span>
+      <span class="tag">CoreDNS</span>
+    </div>
+  </a>
+
+  <a href="spring-mvc-vs-webflux.html" class="card card-spring">
+    <span class="card-arrow">&rarr;</span>
+    <span class="card-icon">🌱</span>
+    <h2>Spring MVC vs WebFlux</h2>
+    <p>Side-by-side load test. Watch the thread-per-request model saturate while the reactive event loop keeps up — and see what happens when you accidentally block.</p>
+    <div class="card-tags">
+      <span class="tag">Spring</span>
+      <span class="tag">Reactive</span>
+      <span class="tag">Threading</span>
+      <span class="tag">Backpressure</span>
+    </div>
+  </a>
+
 </div>
 
-<footer>Interactive Learning Tools</footer>
+<footer>
+  <div>Interactive Learning Tools</div>
+  <div style="margin-top:8px; display:flex; gap:20px; justify-content:center;">
+    <a href="about.html" style="color:#3a4060; font-size:0.8rem; text-decoration:none;">About</a>
+    <a href="privacy.html" style="color:#3a4060; font-size:0.8rem; text-decoration:none;">Privacy Policy</a>
+  </div>
+</footer>
 
+<script src="cookie-consent.js"></script>
 </body>
 </html>

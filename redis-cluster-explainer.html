@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Redis Cluster Explained — Interactive Sharding, Failover & Replication Simulator</title>
+<meta name="description" content="Visualize Redis Cluster hash slots, master-replica replication, gossip-based failover with quorum voting, MOVED and ASK redirects, and Lettuce dynamicRefreshSources — all in an interactive simulator.">
+<meta name="keywords" content="redis cluster explained, redis sharding tutorial, redis failover simulator, redis hash slots, redis replication, lettuce dynamicRefreshSources, redis MOVED ASK redirect">
+<meta name="robots" content="index, follow">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Redis Cluster Explained — Interactive Sharding, Failover & Replication Simulator">
+<meta property="og:description" content="Visualize Redis Cluster hash slots, master-replica replication, gossip-based failover, MOVED/ASK redirects, and dynamicRefreshSources in an interactive simulator.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Redis Cluster Explained — Interactive Sharding, Failover & Replication Simulator">
+<meta name="twitter:description" content="Visualize Redis Cluster hash slots, master-replica replication, gossip-based failover, MOVED/ASK redirects, and dynamicRefreshSources in an interactive simulator.">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; padding: 20px; }
+h1 { text-align: center; margin-bottom: 6px; color: #ff4c4c; }
+.subtitle { text-align: center; color: #888; margin-bottom: 18px; font-size: 14px; }
+a.back { color: #888; font-size: 12px; text-decoration: none; }
+a.back:hover { color: #ff4c4c; }
+
+.top-bar { display: flex; justify-content: space-between; align-items: center; max-width: 1400px; margin: 0 auto 14px; }
+
+.mode-toggle { display: flex; gap: 8px; justify-content: center; margin-bottom: 14px; }
+.mode-btn { padding: 8px 18px; border: 1px solid #3a4a6e; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; background: #1a2a4a; color: #ccc; transition: all 0.2s; }
+.mode-btn.active { background: #ff4c4c; color: #1a1a2e; border-color: #ff4c4c; }
+
+.controls { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 16px; align-items: center; max-width: 1400px; margin-left: auto; margin-right: auto; }
+button { padding: 7px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.2s; }
+button:hover { transform: translateY(-1px); }
+button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.btn-set { background: #ff4c4c; color: white; }
+.btn-get { background: #48dbfb; color: #1a1a2e; }
+.btn-del { background: #576574; color: white; }
+.btn-kill { background: #2d1010; color: #ff4c4c; border: 1px solid #ff4c4c; }
+.btn-revive { background: #0d2a10; color: #00d4aa; border: 1px solid #00d4aa; }
+.btn-reset { background: #333; color: #aaa; border: 1px solid #555; }
+
+input[type=text] { background: #0d1b2a; color: #eee; border: 1px solid #2a3a5e; border-radius: 6px; padding: 7px 10px; font-size: 12px; font-family: monospace; }
+input[type=range] { accent-color: #ff4c4c; }
+label { font-size: 12px; color: #aaa; }
+.input-row { display: flex; gap: 6px; align-items: center; }
+
+.layout { display: grid; grid-template-columns: 280px 1fr 320px; gap: 16px; max-width: 1400px; margin: 0 auto; }
+@media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+
+.panel { background: #16213e; border-radius: 12px; padding: 14px; border: 1px solid #2a3a5e; }
+.panel h2 { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+.panel h3 { font-size: 12px; color: #ff4c4c; margin: 10px 0 6px; }
+
+/* Cluster diagram */
+.cluster-area { background: #16213e; border-radius: 12px; padding: 16px; border: 1px solid #2a3a5e; min-height: 460px; position: relative; }
+.shards-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+
+.shard { background: #0d1b2a; border: 2px solid #2a4a6e; border-radius: 10px; padding: 10px; transition: all 0.3s; position: relative; }
+.shard.selected { border-color: #ffb74d; box-shadow: 0 0 0 2px rgba(255,183,77,0.25); }
+.shard-title { font-size: 11px; color: #aaa; margin-bottom: 6px; display: flex; justify-content: space-between; }
+.shard-slots { font-size: 10px; color: #666; font-family: monospace; }
+
+.node { background: #1a2a4a; border: 2px solid #2a4a6e; border-radius: 8px; padding: 8px; margin-bottom: 6px; cursor: pointer; transition: all 0.2s; position: relative; }
+.node.master { border-color: #ff4c4c; }
+.node.replica { border-color: #48dbfb; opacity: 0.92; }
+.node.dead { border-color: #444; background: #1a1a1a; opacity: 0.45; }
+.node.dead .node-role::after { content: ' DOWN'; color: #ff4c4c; font-weight: 700; }
+.node.flash-write { animation: flashRed 0.6s ease; }
+.node.flash-read { animation: flashCyan 0.6s ease; }
+.node.flash-replicate { animation: flashGreen 0.6s ease; }
+.node.flash-promote { animation: flashOrange 1.2s ease; }
+@keyframes flashRed { 0% { background: #4a1010; } 100% { background: #1a2a4a; } }
+@keyframes flashCyan { 0% { background: #103a4a; } 100% { background: #1a2a4a; } }
+@keyframes flashGreen { 0% { background: #0a3a20; } 100% { background: #1a2a4a; } }
+@keyframes flashOrange { 0%, 100% { background: #1a2a4a; } 50% { background: #4a3010; transform: scale(1.05); } }
+
+.node-role { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; }
+.node.master .node-role { color: #ff4c4c; }
+.node.replica .node-role { color: #48dbfb; }
+.node-id { font-size: 10px; color: #888; font-family: monospace; margin-top: 2px; }
+.node-stats { font-size: 9px; color: #666; margin-top: 4px; font-family: monospace; }
+.node-disk { display: inline-block; height: 4px; background: #2a3a5e; border-radius: 2px; width: 60px; margin-top: 3px; overflow: hidden; vertical-align: middle; }
+.node-disk-fill { height: 100%; background: linear-gradient(90deg, #00d4aa, #ffb74d); width: 0%; transition: width 0.4s; }
+
+/* Client */
+.client-box { background: #2a1a4a; border: 2px solid #b388ff; border-radius: 10px; padding: 10px; margin-bottom: 12px; }
+.client-title { color: #b388ff; font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.client-row { display: flex; justify-content: space-between; font-size: 11px; color: #aaa; margin-bottom: 3px; font-family: monospace; }
+.client-row .v { color: #fff; }
+
+.toggle { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 11px; color: #ccc; }
+.switch { position: relative; width: 32px; height: 18px; background: #2a3a5e; border-radius: 10px; cursor: pointer; transition: background 0.2s; }
+.switch.on { background: #00d4aa; }
+.switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; background: #fff; border-radius: 50%; transition: left 0.2s; }
+.switch.on::after { left: 16px; }
+
+/* Hash slot bar */
+.slot-bar { display: flex; height: 22px; border-radius: 4px; overflow: hidden; margin-top: 8px; border: 1px solid #2a3a5e; }
+.slot-segment { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #1a1a2e; font-weight: 700; cursor: pointer; transition: opacity 0.2s; }
+.slot-segment:hover { opacity: 0.85; }
+.slot-segment.highlight { box-shadow: inset 0 0 0 2px #fff; }
+.slot-formula { font-family: monospace; font-size: 11px; color: #ffb74d; text-align: center; margin: 8px 0; padding: 6px; background: #0d1b2a; border-radius: 6px; }
+.slot-formula .key { color: #ff4c4c; }
+.slot-formula .slot-num { color: #00d4aa; }
+
+/* Log */
+.log { max-height: 240px; overflow-y: auto; font-size: 11px; font-family: monospace; color: #888; padding: 8px; background: #0a0a1a; border-radius: 6px; border: 1px solid #2a3a5e; }
+.log div { margin-bottom: 2px; line-height: 1.4; }
+.log .l-set { color: #ff4c4c; }
+.log .l-get { color: #48dbfb; }
+.log .l-rep { color: #00d4aa; }
+.log .l-fail { color: #ffb74d; }
+.log .l-vote { color: #b388ff; }
+.log .l-redir { color: #ffb74d; }
+.log .l-info { color: #888; }
+.log .l-warn { color: #ff4c4c; }
+
+/* Flying packets */
+.packet { position: fixed; pointer-events: none; padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; font-family: monospace; z-index: 1000; transition: all 0.7s cubic-bezier(0.5, 0, 0.5, 1); white-space: nowrap; }
+.packet.set { background: #ff4c4c; color: #fff; }
+.packet.get { background: #48dbfb; color: #1a1a2e; }
+.packet.rep { background: #00d4aa; color: #1a1a2e; }
+.packet.gossip { background: #b388ff; color: #1a1a2e; }
+.packet.vote { background: #ffb74d; color: #1a1a2e; }
+.packet.redir { background: #ffb74d; color: #1a1a2e; border: 2px dashed #fff; }
+.packet.refresh { background: #5f27cd; color: #fff; }
+.packet.fade { opacity: 0; }
+
+/* Data table */
+.data-table { width: 100%; font-size: 10px; font-family: monospace; margin-top: 8px; border-collapse: collapse; }
+.data-table th { color: #888; font-weight: 600; text-align: left; padding: 3px 4px; border-bottom: 1px solid #2a3a5e; font-size: 9px; }
+.data-table td { padding: 2px 4px; color: #ccc; }
+.data-table .key-col { color: #ff4c4c; }
+
+/* Banner */
+.scenario-bar { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 14px; padding: 8px; background: #0d1b2a; border-radius: 8px; max-width: 1400px; margin-left: auto; margin-right: auto; }
+.btn-scenario { padding: 5px 12px; border: 1px solid #3a4a6e; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600; background: #1a2a4a; color: #ccc; }
+.btn-scenario:hover { background: #2a3a6e; color: #fff; }
+
+.banner { padding: 10px 14px; border-radius: 8px; margin: 10px auto; font-size: 12px; line-height: 1.6; max-width: 1400px; }
+.banner.info { background: #0d1b2a; border: 1px solid #48dbfb; color: #cceeff; }
+.banner.warn { background: #2d1010; border: 1px solid #ff4c4c; color: #ffcccc; }
+.banner.ok { background: #0d2010; border: 1px solid #00d4aa; color: #aaffdd; }
+
+/* Principles */
+.principles { max-width: 1400px; margin: 18px auto; background: #0d1b2a; border-radius: 12px; padding: 16px; border: 1px solid #2a3a5e; }
+.principles h2 { color: #ffb74d; font-size: 14px; margin-bottom: 10px; }
+.principles details { margin-bottom: 6px; padding: 8px 10px; background: #16213e; border-radius: 6px; border: 1px solid #2a3a5e; }
+.principles summary { cursor: pointer; font-size: 12px; color: #00d4aa; font-weight: 600; }
+.principles details p, .principles details ul { color: #aaa; font-size: 12px; line-height: 1.6; margin-top: 6px; }
+.principles details ul { padding-left: 18px; }
+.principles code { background: #0a0a1a; padding: 1px 5px; border-radius: 3px; color: #ffb74d; font-size: 11px; }
+
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 10px; color: #aaa; margin-top: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <a href="index.html" class="back">&larr; Back</a>
+  <div></div>
+</div>
+
+<h1>Redis Cluster Explainer</h1>
+<p class="subtitle">Sharding, replication, failover, and how the client tracks topology</p>
+
+<div class="mode-toggle">
+  <button class="mode-btn active" id="btnCluster">Cluster Mode</button>
+  <button class="mode-btn" id="btnStandalone">Standalone Mode</button>
+</div>
+
+<div class="scenario-bar">
+  <span style="color:#888;font-size:11px;">Scenarios:</span>
+  <button class="btn-scenario" data-scenario="hashtag">Hash tags route together</button>
+  <button class="btn-scenario" data-scenario="moved">MOVED redirect</button>
+  <button class="btn-scenario" data-scenario="ask">ASK during migration</button>
+  <button class="btn-scenario" data-scenario="failover">Kill master &amp; failover</button>
+  <button class="btn-scenario" data-scenario="refresh">Topology refresh</button>
+</div>
+
+<div id="banner" class="banner info" style="display:none;"></div>
+
+<div class="layout">
+
+  <!-- LEFT: Controls -->
+  <div class="panel">
+    <h2>Commands</h2>
+    <div class="input-row" style="margin-bottom:8px;">
+      <input type="text" id="keyInput" placeholder="key (e.g. user:42)" value="user:42" style="flex:1;">
+    </div>
+    <div class="input-row" style="margin-bottom:8px;">
+      <input type="text" id="valInput" placeholder="value" value="alice" style="flex:1;">
+    </div>
+    <div class="controls" style="margin-bottom:10px;">
+      <button class="btn-set" id="btnSet">SET</button>
+      <button class="btn-get" id="btnGet">GET</button>
+      <button class="btn-del" id="btnDel">DEL</button>
+    </div>
+
+    <h3>Cluster size</h3>
+    <div class="toggle">
+      <label style="flex:1;">Masters: <span id="lblMasters">3</span></label>
+      <input type="range" id="rngMasters" min="3" max="6" value="3" style="width:120px;">
+    </div>
+    <div class="toggle">
+      <label style="flex:1;">Replicas/master: <span id="lblReplicas">1</span></label>
+      <input type="range" id="rngReplicas" min="0" max="2" value="1" style="width:120px;">
+    </div>
+
+    <h3>Client config (Lettuce-style)</h3>
+    <div class="toggle">
+      <span style="flex:1;">dynamicRefreshSources</span>
+      <div class="switch on" id="swRefresh"></div>
+    </div>
+    <div style="font-size:10px; color:#888; line-height:1.5; margin-top:4px;" id="refreshHint">
+      <strong style="color:#00d4aa;">ON</strong>: client refreshes topology from <em>all</em> known nodes (masters + replicas).
+    </div>
+
+    <div class="toggle" style="margin-top:10px;">
+      <span style="flex:1;">Read from replicas</span>
+      <div class="switch" id="swReadReplica"></div>
+    </div>
+
+    <div class="toggle" style="margin-top:6px;">
+      <span style="flex:1;">Visualize persistence (RDB)</span>
+      <div class="switch on" id="swPersist"></div>
+    </div>
+
+    <h3>Reset</h3>
+    <button class="btn-reset" id="btnReset" style="width:100%;">Rebuild cluster</button>
+  </div>
+
+  <!-- CENTER: Cluster -->
+  <div>
+    <div class="cluster-area">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <div style="font-size:12px; color:#888;" id="topoLabel">Cluster topology</div>
+        <div style="font-size:11px; color:#666;">16,384 hash slots</div>
+      </div>
+      <div class="slot-bar" id="slotBar"></div>
+      <div class="slot-formula" id="slotFormula">Type a key and press SET to see CRC16 routing</div>
+      <div class="shards-grid" id="shards"></div>
+      <div class="legend">
+        <span><span class="dot" style="background:#ff4c4c;"></span>Master</span>
+        <span><span class="dot" style="background:#48dbfb;"></span>Replica</span>
+        <span><span class="dot" style="background:#00d4aa;"></span>Replication</span>
+        <span><span class="dot" style="background:#b388ff;"></span>Gossip</span>
+        <span><span class="dot" style="background:#ffb74d;"></span>Vote / Redirect</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Client + log -->
+  <div class="panel">
+    <h2>Client view</h2>
+    <div class="client-box">
+      <div class="client-title">Redis Client</div>
+      <div class="client-row"><span>Seed nodes:</span><span class="v" id="cSeed">-</span></div>
+      <div class="client-row"><span>Known nodes:</span><span class="v" id="cKnown">-</span></div>
+      <div class="client-row"><span>Slot map age:</span><span class="v" id="cAge">fresh</span></div>
+      <div class="client-row"><span>Last command:</span><span class="v" id="cLast">-</span></div>
+    </div>
+
+    <h2>Stored data</h2>
+    <table class="data-table" id="dataTable">
+      <thead><tr><th>Key</th><th>Slot</th><th>Shard</th><th>Value</th></tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <h2 style="margin-top:14px;">Event log</h2>
+    <div class="log" id="log"></div>
+  </div>
+
+</div>
+
+<div class="principles">
+  <h2>Core Redis principles (click to expand)</h2>
+  <details open>
+    <summary>In-memory data store, single-threaded execution</summary>
+    <p>Redis stores data in RAM, so reads and writes are extremely fast (microseconds). Each Redis instance executes commands on a <strong>single thread</strong>, which means commands are atomic by default — no locks needed. Newer versions (6+) have I/O threads for network handling, but command logic is still serialized.</p>
+  </details>
+  <details>
+    <summary>Sharding via 16,384 hash slots (Cluster mode)</summary>
+    <p>Each key is mapped to one of <code>16384</code> slots using <code>CRC16(key) mod 16384</code>. Slots are divided across master shards. To force two keys onto the same shard, wrap the common part in <code>{}</code> — Redis will only hash the part inside the braces.</p>
+    <p>Example: <code>{user:42}:profile</code> and <code>{user:42}:cart</code> hash <code>user:42</code> only, so both land on the same slot/shard. This lets you use multi-key commands (<code>MGET</code>, transactions, Lua) across them.</p>
+  </details>
+  <details>
+    <summary>Replication: async master &rarr; replica</summary>
+    <p>Each master can have N replicas. Writes go to the master, then are streamed asynchronously to replicas. This means <strong>replicas may lag</strong> &mdash; on master failure, the promoted replica might miss the most recent writes (data loss window).</p>
+    <p>Redis supports <code>WAIT numreplicas timeout</code> for stronger guarantees, but it's not synchronous by default for performance reasons.</p>
+  </details>
+  <details>
+    <summary>Failure detection &amp; failover (gossip + voting)</summary>
+    <p>Cluster nodes constantly gossip with each other via <strong>PING/PONG</strong>. If a node misses replies for <code>cluster-node-timeout</code>, others mark it as <em>PFAIL</em> (possibly failed). Once a majority of masters agree, it becomes <em>FAIL</em>.</p>
+    <p>The dead master's replicas request votes from surviving masters. The replica with the most up-to-date replication offset wins, runs <code>REPLICAOF NO ONE</code>, claims the slots, and gossips its new role.</p>
+    <p><strong>You need a majority of masters alive</strong> — that's why production clusters use 3+ masters across failure domains.</p>
+  </details>
+  <details>
+    <summary>MOVED vs ASK redirects</summary>
+    <ul>
+      <li><strong>MOVED &lt;slot&gt; &lt;node&gt;</strong>: client hit a node that doesn't own this slot anymore. The slot has permanently moved. Client should update its slot map and retry on the new node.</li>
+      <li><strong>ASK &lt;slot&gt; &lt;node&gt;</strong>: slot is currently <em>migrating</em>. The key may already be on the destination. Client retries on the destination with an <code>ASKING</code> prefix, but does NOT update its permanent slot map.</li>
+    </ul>
+  </details>
+  <details>
+    <summary>dynamicRefreshSources (Lettuce client)</summary>
+    <ul>
+      <li><strong>true</strong> (default): refresh topology from <em>all known nodes</em> &mdash; masters and replicas. Resilient if the original seeds die.</li>
+      <li><strong>false</strong>: refresh topology only from the <em>seed nodes</em> originally configured. Lighter network traffic, but if all seeds are dead the client can't discover new topology.</li>
+    </ul>
+    <p>Pair this with <code>enablePeriodicRefresh</code> and <code>enableAllAdaptiveRefreshTriggers</code> for production-grade resilience.</p>
+  </details>
+  <details>
+    <summary>Persistence: RDB &amp; AOF</summary>
+    <ul>
+      <li><strong>RDB</strong>: point-in-time binary snapshot, dumped every N seconds / M changes. Fast restart, smaller files, but you lose the last few seconds on crash.</li>
+      <li><strong>AOF</strong>: append-only log of every write command. Replayed on startup. Slower to load, larger files, but durability up to <code>fsync</code> policy (always / everysec / no).</li>
+      <li>Most production setups run <strong>both</strong>.</li>
+    </ul>
+  </details>
+  <details>
+    <summary>Eviction policies (when maxmemory hits)</summary>
+    <ul>
+      <li><code>noeviction</code> — reject writes (default)</li>
+      <li><code>allkeys-lru</code> / <code>allkeys-lfu</code> — evict any key by recency / frequency</li>
+      <li><code>volatile-lru</code> / <code>volatile-ttl</code> — only evict keys with TTL set</li>
+      <li><code>allkeys-random</code>, <code>volatile-random</code> — random eviction</li>
+    </ul>
+  </details>
+  <details>
+    <summary>Data structures &amp; CAP positioning</summary>
+    <p>Redis supports strings, lists, sets, hashes, sorted sets, streams, bitmaps, hyperloglogs, and geospatial indexes. Atomic ops via <code>MULTI/EXEC</code>, Lua scripts, and <code>FUNCTION</code>.</p>
+    <p>On the CAP triangle, Redis Cluster favors <strong>AP</strong> &mdash; it stays available during partitions but async replication means writes can be lost on failover. For stronger consistency, consider <code>WAIT</code> or external coordination (e.g., RedLock).</p>
+  </details>
+</div>
+
+<script>
+// ============= STATE =============
+const state = {
+  mode: 'cluster',          // 'cluster' | 'standalone'
+  numMasters: 3,
+  numReplicas: 1,
+  shards: [],               // [{ id, master: nodeId, replicas: [...], slotStart, slotEnd, data: Map }]
+  nodes: {},                // nodeId -> { id, role, shardId, alive, replOffset, snapshotPct }
+  client: {
+    seeds: [],              // initial seed node ids
+    known: new Set(),       // known node ids in topology
+    slotMap: [],            // index 0..16383 -> shardId (client-side cached)
+    dynamicRefresh: true,
+    readFromReplica: false,
+    persist: true,
+    age: 0,                 // ticks since last refresh
+  },
+  migrating: null,          // { slot, fromShard, toShard, keysMoved: Set }
+  busy: false,
+};
+
+// ============= CRC16 (Redis flavor: CRC16-CCITT-FALSE / XMODEM) =============
+const CRC16_TAB = (() => {
+  const t = new Uint16Array(256);
+  for (let i = 0; i < 256; i++) {
+    let crc = i << 8;
+    for (let j = 0; j < 8; j++) {
+      crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+      crc &= 0xFFFF;
+    }
+    t[i] = crc;
+  }
+  return t;
+})();
+function crc16(str) {
+  let crc = 0;
+  for (let i = 0; i < str.length; i++) {
+    crc = ((crc << 8) ^ CRC16_TAB[((crc >> 8) ^ str.charCodeAt(i)) & 0xFF]) & 0xFFFF;
+  }
+  return crc;
+}
+function hashTagOf(key) {
+  const open = key.indexOf('{');
+  if (open === -1) return key;
+  const close = key.indexOf('}', open + 1);
+  if (close === -1 || close === open + 1) return key;
+  return key.substring(open + 1, close);
+}
+function slotOf(key) {
+  const tag = hashTagOf(key);
+  return crc16(tag) % 16384;
+}
+
+// ============= BUILD CLUSTER =============
+function buildCluster() {
+  state.shards = [];
+  state.nodes = {};
+  const slotsPerShard = Math.floor(16384 / state.numMasters);
+  for (let s = 0; s < state.numMasters; s++) {
+    const start = s * slotsPerShard;
+    const end = (s === state.numMasters - 1) ? 16383 : (start + slotsPerShard - 1);
+    const masterId = `M${s}`;
+    state.nodes[masterId] = { id: masterId, role: 'master', shardId: s, alive: true, replOffset: 0, snapshotPct: 0 };
+    const replicas = [];
+    for (let r = 0; r < state.numReplicas; r++) {
+      const repId = `R${s}-${r}`;
+      state.nodes[repId] = { id: repId, role: 'replica', shardId: s, alive: true, replOffset: 0, snapshotPct: 0 };
+      replicas.push(repId);
+    }
+    state.shards.push({ id: s, master: masterId, replicas, slotStart: start, slotEnd: end, data: new Map() });
+  }
+  // client setup
+  state.client.seeds = [state.shards[0].master, state.shards[1] ? state.shards[1].master : null].filter(Boolean);
+  state.client.known = new Set(Object.keys(state.nodes));
+  state.client.slotMap = buildSlotMap();
+  state.client.age = 0;
+  state.migrating = null;
+  render();
+}
+
+function buildSlotMap() {
+  const map = new Array(16384);
+  state.shards.forEach(sh => {
+    for (let i = sh.slotStart; i <= sh.slotEnd; i++) map[i] = sh.id;
+  });
+  return map;
+}
+
+function shardForSlot(slot) {
+  return state.shards.find(s => slot >= s.slotStart && slot <= s.slotEnd);
+}
+
+// ============= RENDER =============
+const SHARD_COLORS = ['#ff4c4c', '#ffb74d', '#00d4aa', '#48dbfb', '#b388ff', '#ff6bcb'];
+
+function render() {
+  renderShards();
+  renderSlotBar();
+  renderClient();
+  renderDataTable();
+}
+
+function renderShards() {
+  const grid = document.getElementById('shards');
+  grid.innerHTML = '';
+  if (state.mode === 'standalone') {
+    // standalone: single shard owns ALL slots
+    const sh = state.shards[0];
+    const card = document.createElement('div');
+    card.className = 'shard';
+    card.id = `shard-${sh.id}`;
+    card.innerHTML = `
+      <div class="shard-title"><span style="color:${SHARD_COLORS[0]}">Standalone</span><span class="shard-slots">all keys</span></div>
+      ${nodeHtml(sh.master)}
+      ${sh.replicas.map(nodeHtml).join('')}
+    `;
+    grid.appendChild(card);
+    return;
+  }
+  state.shards.forEach((sh, i) => {
+    const card = document.createElement('div');
+    card.className = 'shard';
+    card.id = `shard-${sh.id}`;
+    const color = SHARD_COLORS[i % SHARD_COLORS.length];
+    card.innerHTML = `
+      <div class="shard-title"><span style="color:${color}">Shard ${sh.id}</span><span class="shard-slots">${sh.slotStart}-${sh.slotEnd}</span></div>
+      ${nodeHtml(sh.master)}
+      ${sh.replicas.map(nodeHtml).join('')}
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function nodeHtml(nodeId) {
+  const n = state.nodes[nodeId];
+  if (!n) return '';
+  const cls = `node ${n.role} ${n.alive ? '' : 'dead'}`;
+  const keyCount = n.role === 'master'
+    ? state.shards[n.shardId].data.size
+    : state.shards[n.shardId].data.size; // replicas mirror data
+  return `
+    <div class="${cls}" id="node-${n.id}" onclick="killOrRevive('${n.id}')">
+      <div class="node-role">${n.role.toUpperCase()}</div>
+      <div class="node-id">${n.id}</div>
+      <div class="node-stats">keys: ${keyCount} · offset: ${n.replOffset}</div>
+      ${state.client.persist ? `<div class="node-disk"><div class="node-disk-fill" style="width:${n.snapshotPct}%;"></div></div>` : ''}
+    </div>
+  `;
+}
+
+function renderSlotBar() {
+  const bar = document.getElementById('slotBar');
+  bar.innerHTML = '';
+  if (state.mode === 'standalone') {
+    const seg = document.createElement('div');
+    seg.className = 'slot-segment';
+    seg.style.background = SHARD_COLORS[0];
+    seg.textContent = 'all 16384 slots';
+    bar.appendChild(seg);
+    return;
+  }
+  state.shards.forEach((sh, i) => {
+    const seg = document.createElement('div');
+    seg.className = 'slot-segment';
+    seg.id = `slot-seg-${sh.id}`;
+    seg.style.background = SHARD_COLORS[i % SHARD_COLORS.length];
+    seg.textContent = `${sh.slotStart}-${sh.slotEnd}`;
+    bar.appendChild(seg);
+  });
+}
+
+function renderClient() {
+  document.getElementById('cSeed').textContent = state.client.seeds.join(', ');
+  document.getElementById('cKnown').textContent = `${state.client.known.size} nodes`;
+  document.getElementById('cAge').textContent = state.client.age === 0 ? 'fresh' : `${state.client.age} ops old`;
+}
+
+function renderDataTable() {
+  const tbody = document.querySelector('#dataTable tbody');
+  tbody.innerHTML = '';
+  const rows = [];
+  state.shards.forEach(sh => {
+    sh.data.forEach((v, k) => {
+      rows.push({ k, slot: slotOf(k), shard: sh.id, v });
+    });
+  });
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:#555;">no keys yet</td></tr>';
+    return;
+  }
+  rows.slice(0, 12).forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="key-col">${escapeHtml(r.k)}</td><td>${r.slot}</td><td>${state.mode === 'standalone' ? '-' : r.shard}</td><td>${escapeHtml(String(r.v))}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function escapeHtml(s) { return s.replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+// ============= ANIMATION =============
+function nodeRect(nodeId) {
+  const el = document.getElementById(`node-${nodeId}`);
+  return el ? el.getBoundingClientRect() : null;
+}
+
+function clientRect() {
+  const el = document.querySelector('.client-box');
+  return el ? el.getBoundingClientRect() : null;
+}
+
+function flyPacket(fromRect, toRect, label, cls) {
+  return new Promise(resolve => {
+    if (!fromRect || !toRect) { resolve(); return; }
+    const p = document.createElement('div');
+    p.className = `packet ${cls}`;
+    p.textContent = label;
+    p.style.left = (fromRect.left + fromRect.width / 2) + 'px';
+    p.style.top = (fromRect.top + fromRect.height / 2) + 'px';
+    document.body.appendChild(p);
+    requestAnimationFrame(() => {
+      p.style.left = (toRect.left + toRect.width / 2) + 'px';
+      p.style.top = (toRect.top + toRect.height / 2) + 'px';
+    });
+    setTimeout(() => { p.classList.add('fade'); }, 600);
+    setTimeout(() => { p.remove(); resolve(); }, 750);
+  });
+}
+
+function flashNode(nodeId, kind) {
+  const el = document.getElementById(`node-${nodeId}`);
+  if (!el) return;
+  el.classList.remove('flash-write', 'flash-read', 'flash-replicate', 'flash-promote');
+  void el.offsetWidth;
+  el.classList.add(`flash-${kind}`);
+}
+
+function highlightSlot(shardId) {
+  document.querySelectorAll('.slot-segment').forEach(s => s.classList.remove('highlight'));
+  const seg = document.getElementById(`slot-seg-${shardId}`);
+  if (seg) seg.classList.add('highlight');
+  setTimeout(() => seg && seg.classList.remove('highlight'), 1200);
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ============= LOG =============
+function log(msg, cls = 'l-info') {
+  const el = document.getElementById('log');
+  const div = document.createElement('div');
+  div.className = cls;
+  div.textContent = msg;
+  el.insertBefore(div, el.firstChild);
+  while (el.children.length > 80) el.removeChild(el.lastChild);
+}
+
+function banner(html, cls = 'info') {
+  const el = document.getElementById('banner');
+  el.className = `banner ${cls}`;
+  el.innerHTML = html;
+  el.style.display = 'block';
+}
+function clearBanner() { document.getElementById('banner').style.display = 'none'; }
+
+// ============= COMMANDS =============
+async function cmdSet(key, val) {
+  if (state.busy) return;
+  state.busy = true;
+  document.getElementById('cLast').textContent = `SET ${key}`;
+  state.client.age++;
+
+  if (state.mode === 'standalone') {
+    const sh = state.shards[0];
+    if (!state.nodes[sh.master].alive) {
+      log(`SET ${key} → standalone master is DOWN, command fails`, 'l-warn');
+      state.busy = false;
+      return;
+    }
+    log(`SET ${key} → standalone master`, 'l-set');
+    const cRect = clientRect();
+    await flyPacket(cRect, nodeRect(sh.master), `SET ${key}`, 'set');
+    flashNode(sh.master, 'write');
+    sh.data.set(key, val);
+    state.nodes[sh.master].replOffset++;
+    await sleep(120);
+    // replicate
+    for (const rid of sh.replicas) {
+      if (!state.nodes[rid].alive) continue;
+      flyPacket(nodeRect(sh.master), nodeRect(rid), `repl`, 'rep');
+      setTimeout(() => { flashNode(rid, 'replicate'); state.nodes[rid].replOffset = state.nodes[sh.master].replOffset; render(); }, 350);
+    }
+    if (state.client.persist) tickSnapshot(sh.master);
+    await sleep(500);
+    render();
+    state.busy = false;
+    return;
+  }
+
+  // ===== Cluster mode =====
+  const slot = slotOf(key);
+  const tag = hashTagOf(key);
+  const formula = tag === key
+    ? `slot = CRC16(<span class="key">${escapeHtml(key)}</span>) mod 16384 = <span class="slot-num">${slot}</span>`
+    : `slot = CRC16(<span class="key">${escapeHtml(tag)}</span>) [hash tag from {${escapeHtml(tag)}}] mod 16384 = <span class="slot-num">${slot}</span>`;
+  document.getElementById('slotFormula').innerHTML = formula;
+
+  // Client uses its cached slot map
+  let targetShardId = state.client.slotMap[slot];
+  let targetShard = state.shards[targetShardId];
+  highlightSlot(targetShardId);
+
+  // Migration check: if slot is migrating and key isn't moved yet, target stays at source
+  // If slot map is stale, simulate MOVED
+  const realShard = shardForSlot(slot);
+  const cRect = clientRect();
+
+  if (!realShard.master || !state.nodes[realShard.master].alive) {
+    log(`SET ${key} → target master ${realShard.master} is DOWN`, 'l-warn');
+    state.busy = false;
+    return;
+  }
+
+  // If client has stale slot map (target != real owner)
+  if (targetShardId !== realShard.id && !state.migrating) {
+    log(`SET ${key} → client thinks slot ${slot} is on shard ${targetShardId}`, 'l-set');
+    await flyPacket(cRect, nodeRect(targetShard.master), `SET ${key}`, 'set');
+    flashNode(targetShard.master, 'write');
+    log(`shard ${targetShardId} replies: MOVED ${slot} ${realShard.master}`, 'l-redir');
+    await flyPacket(nodeRect(targetShard.master), cRect, `MOVED ${slot}`, 'redir');
+    state.client.slotMap[slot] = realShard.id; // update slot map
+    targetShard = realShard;
+  }
+
+  // Migration scenario: ASK redirect
+  if (state.migrating && state.migrating.slot === slot) {
+    const { fromShard, toShard, keysMoved } = state.migrating;
+    if (!keysMoved.has(key)) {
+      // key still on source
+      log(`SET ${key} → shard ${fromShard.id} (slot migrating)`, 'l-set');
+      await flyPacket(cRect, nodeRect(fromShard.master), `SET ${key}`, 'set');
+      flashNode(fromShard.master, 'write');
+      // simulate the source forwarding ASK because slot is being migrated and key already moved? no — let's say if writing during migration, source asks
+      log(`shard ${fromShard.id} replies: ASK ${slot} ${toShard.master}`, 'l-redir');
+      await flyPacket(nodeRect(fromShard.master), cRect, `ASK ${slot}`, 'redir');
+      log(`client retries with ASKING prefix → shard ${toShard.id}`, 'l-redir');
+      await flyPacket(cRect, nodeRect(toShard.master), `ASKING; SET`, 'set');
+      flashNode(toShard.master, 'write');
+      toShard.data.set(key, val);
+      keysMoved.add(key);
+      state.nodes[toShard.master].replOffset++;
+      replicateAsync(toShard);
+      if (state.client.persist) tickSnapshot(toShard.master);
+      await sleep(400);
+      render();
+      state.busy = false;
+      return;
+    }
+  }
+
+  // Normal write
+  log(`SET ${key} → shard ${targetShard.id} (slot ${slot})`, 'l-set');
+  await flyPacket(cRect, nodeRect(targetShard.master), `SET ${key}`, 'set');
+  flashNode(targetShard.master, 'write');
+  targetShard.data.set(key, val);
+  state.nodes[targetShard.master].replOffset++;
+  replicateAsync(targetShard);
+  if (state.client.persist) tickSnapshot(targetShard.master);
+  await sleep(500);
+  render();
+  state.busy = false;
+}
+
+function replicateAsync(shard) {
+  shard.replicas.forEach(rid => {
+    if (!state.nodes[rid].alive) return;
+    setTimeout(() => {
+      const fromR = nodeRect(shard.master);
+      const toR = nodeRect(rid);
+      flyPacket(fromR, toR, `repl`, 'rep');
+    }, 200);
+    setTimeout(() => {
+      flashNode(rid, 'replicate');
+      state.nodes[rid].replOffset = state.nodes[shard.master].replOffset;
+      log(`  └─ replicated to ${rid}`, 'l-rep');
+      render();
+    }, 550);
+  });
+}
+
+function tickSnapshot(nodeId) {
+  const n = state.nodes[nodeId];
+  if (!n) return;
+  n.snapshotPct = Math.min(100, n.snapshotPct + 12);
+  if (n.snapshotPct >= 100) {
+    setTimeout(() => { n.snapshotPct = 5; render(); log(`  └─ ${nodeId}: RDB snapshot written to disk`, 'l-info'); }, 600);
+  }
+}
+
+async function cmdGet(key) {
+  if (state.busy) return;
+  state.busy = true;
+  document.getElementById('cLast').textContent = `GET ${key}`;
+  state.client.age++;
+  const cRect = clientRect();
+
+  if (state.mode === 'standalone') {
+    const sh = state.shards[0];
+    if (!state.nodes[sh.master].alive) {
+      log(`GET ${key} → standalone master DOWN`, 'l-warn');
+      state.busy = false; return;
+    }
+    await flyPacket(cRect, nodeRect(sh.master), `GET ${key}`, 'get');
+    flashNode(sh.master, 'read');
+    const v = sh.data.get(key);
+    log(`GET ${key} → ${v === undefined ? '(nil)' : JSON.stringify(v)}`, 'l-get');
+    await sleep(300);
+    state.busy = false;
+    return;
+  }
+
+  const slot = slotOf(key);
+  document.getElementById('slotFormula').innerHTML = `slot = CRC16(<span class="key">${escapeHtml(hashTagOf(key))}</span>) mod 16384 = <span class="slot-num">${slot}</span>`;
+  const realShard = shardForSlot(slot);
+  let target;
+  if (state.client.readFromReplica && realShard.replicas.length > 0) {
+    const live = realShard.replicas.find(r => state.nodes[r].alive);
+    target = live || realShard.master;
+  } else {
+    target = realShard.master;
+  }
+  if (!state.nodes[target].alive) {
+    // fallback to alive replica
+    const live = [realShard.master, ...realShard.replicas].find(n => state.nodes[n].alive);
+    if (!live) { log(`GET ${key} → all nodes in shard ${realShard.id} are DOWN`, 'l-warn'); state.busy = false; return; }
+    target = live;
+  }
+  highlightSlot(realShard.id);
+  await flyPacket(cRect, nodeRect(target), `GET ${key}`, 'get');
+  flashNode(target, 'read');
+  const v = realShard.data.get(key);
+  log(`GET ${key} → shard ${realShard.id}/${target} → ${v === undefined ? '(nil)' : JSON.stringify(v)}`, 'l-get');
+  await sleep(400);
+  state.busy = false;
+}
+
+async function cmdDel(key) {
+  if (state.busy) return;
+  state.busy = true;
+  state.client.age++;
+  const slot = slotOf(key);
+  const target = state.mode === 'standalone' ? state.shards[0] : shardForSlot(slot);
+  if (!state.nodes[target.master].alive) { log(`DEL ${key} → master DOWN`, 'l-warn'); state.busy = false; return; }
+  const cRect = clientRect();
+  await flyPacket(cRect, nodeRect(target.master), `DEL ${key}`, 'set');
+  flashNode(target.master, 'write');
+  const had = target.data.delete(key);
+  log(`DEL ${key} → ${had ? 1 : 0}`, 'l-set');
+  state.nodes[target.master].replOffset++;
+  replicateAsync(target);
+  await sleep(400);
+  render();
+  state.busy = false;
+}
+
+// ============= FAILOVER =============
+async function killNode(nodeId) {
+  const n = state.nodes[nodeId];
+  if (!n || !n.alive) return;
+  n.alive = false;
+  log(`💥 ${nodeId} killed`, 'l-warn');
+  render();
+  if (n.role !== 'master' || state.mode === 'standalone') {
+    if (state.mode === 'standalone' && n.role === 'master') {
+      banner(`<strong>Standalone master is down.</strong> No automatic failover in standalone mode — you'd need Sentinel or manual intervention. Reads/writes fail.`, 'warn');
+    }
+    return;
+  }
+  await runFailover(n.shardId);
+}
+
+async function runFailover(shardId) {
+  const sh = state.shards[shardId];
+  banner(`<strong>Failover initiated for shard ${shardId}.</strong> Watch for: PFAIL gossip → FAIL agreement → replica vote → promotion.`, 'warn');
+
+  // 1. Gossip PFAIL detection
+  await sleep(400);
+  log(`gossip: peers detect ${sh.master} missed PINGs → marking PFAIL`, 'l-fail');
+  const others = state.shards.filter(s => s.id !== shardId).map(s => s.master).filter(m => state.nodes[m].alive);
+  for (const peerId of others) {
+    flyPacket(nodeRect(sh.replicas[0] || peerId), nodeRect(peerId), 'PFAIL', 'gossip');
+  }
+  await sleep(700);
+
+  // 2. Quorum check
+  const liveMasters = state.shards.filter(s => state.nodes[s.master].alive).length;
+  const quorum = Math.floor(state.numMasters / 2) + 1;
+  log(`quorum check: ${liveMasters} live masters, need ${quorum}`, 'l-vote');
+  if (liveMasters < quorum) {
+    banner(`<strong>Cluster lost quorum.</strong> ${liveMasters}/${state.numMasters} masters alive (need ${quorum}). No failover possible — cluster is in <code>fail</code> state.`, 'warn');
+    return;
+  }
+
+  // 3. Mark FAIL
+  log(`majority agrees: ${sh.master} marked FAIL`, 'l-fail');
+  await sleep(400);
+
+  // 4. Find candidate replica with highest replOffset
+  const liveReplicas = sh.replicas.filter(r => state.nodes[r].alive);
+  if (liveReplicas.length === 0) {
+    banner(`<strong>Shard ${shardId} has no live replicas.</strong> Slots ${sh.slotStart}-${sh.slotEnd} are unavailable. The cluster needs operator intervention (e.g., <code>CLUSTER FORGET</code> + add new replicas).`, 'warn');
+    return;
+  }
+  liveReplicas.sort((a, b) => state.nodes[b].replOffset - state.nodes[a].replOffset);
+  const candidate = liveReplicas[0];
+  log(`candidate: ${candidate} (highest replOffset = ${state.nodes[candidate].replOffset})`, 'l-vote');
+  await sleep(400);
+
+  // 5. Vote request
+  log(`${candidate} requests votes from masters`, 'l-vote');
+  for (const peerId of others) {
+    flyPacket(nodeRect(candidate), nodeRect(peerId), 'VOTE?', 'vote');
+  }
+  await sleep(600);
+  for (const peerId of others) {
+    flyPacket(nodeRect(peerId), nodeRect(candidate), 'YES', 'vote');
+  }
+  await sleep(700);
+
+  // 6. Promote
+  log(`${candidate} wins election → REPLICAOF NO ONE → claims slots ${sh.slotStart}-${sh.slotEnd}`, 'l-vote');
+  flashNode(candidate, 'promote');
+  state.nodes[candidate].role = 'master';
+  // remove candidate from replicas, set as master
+  sh.replicas = sh.replicas.filter(r => r !== candidate);
+  sh.master = candidate;
+  await sleep(800);
+
+  // 7. Gossip new role
+  log(`new master ${candidate} gossips its role`, 'l-vote');
+  for (const peerId of others) {
+    flyPacket(nodeRect(candidate), nodeRect(peerId), 'I am master', 'gossip');
+  }
+  await sleep(500);
+
+  // 8. Client topology refresh
+  if (state.client.dynamicRefresh) {
+    log(`client refreshes topology (dynamicRefreshSources=true → query all known nodes)`, 'l-info');
+    const cRect = clientRect();
+    Array.from(state.client.known).filter(id => state.nodes[id] && state.nodes[id].alive).slice(0, 4).forEach((nid, i) => {
+      setTimeout(() => flyPacket(cRect, nodeRect(nid), 'CLUSTER NODES', 'refresh'), i * 80);
+    });
+  } else {
+    log(`client refreshes topology (dynamicRefreshSources=false → seeds only)`, 'l-info');
+    const cRect = clientRect();
+    state.client.seeds.filter(id => state.nodes[id] && state.nodes[id].alive).forEach((nid, i) => {
+      setTimeout(() => flyPacket(cRect, nodeRect(nid), 'CLUSTER NODES', 'refresh'), i * 80);
+    });
+    if (state.client.seeds.every(id => !state.nodes[id] || !state.nodes[id].alive)) {
+      banner(`<strong>All seed nodes are dead and dynamicRefreshSources=false.</strong> Client is blind to topology updates! Toggle dynamicRefreshSources=true to recover.`, 'warn');
+    }
+  }
+  await sleep(600);
+
+  state.client.slotMap = buildSlotMap();
+  state.client.age = 0;
+  banner(`<strong>Failover complete.</strong> ${candidate} is now master of shard ${shardId}. Writes resume.`, 'ok');
+  render();
+}
+
+function reviveNode(nodeId) {
+  const n = state.nodes[nodeId];
+  if (!n || n.alive) return;
+  n.alive = true;
+  log(`${nodeId} revived (rejoins as ${n.role})`, 'l-info');
+  // if old master comes back after being demoted, it joins as replica
+  const sh = state.shards[n.shardId];
+  if (sh.master !== nodeId && n.role === 'master') {
+    n.role = 'replica';
+    sh.replicas.push(nodeId);
+    log(`  └─ ${nodeId} demoted to replica (different node is now master)`, 'l-info');
+  }
+  render();
+}
+
+function killOrRevive(nodeId) {
+  const n = state.nodes[nodeId];
+  if (!n) return;
+  if (n.alive) killNode(nodeId);
+  else reviveNode(nodeId);
+}
+
+// ============= SCENARIOS =============
+async function runScenario(name) {
+  if (state.busy) return;
+  clearBanner();
+  if (name === 'hashtag') {
+    if (state.mode !== 'cluster') { switchMode('cluster'); }
+    banner(`<strong>Hash tags:</strong> Two keys with the same <code>{tag}</code> always land on the same shard. Watch <code>{user:42}:profile</code> and <code>{user:42}:cart</code> route to the same shard.`, 'info');
+    document.getElementById('keyInput').value = '{user:42}:profile';
+    document.getElementById('valInput').value = 'alice';
+    await cmdSet('{user:42}:profile', 'alice');
+    await sleep(500);
+    document.getElementById('keyInput').value = '{user:42}:cart';
+    document.getElementById('valInput').value = 'item-99';
+    await cmdSet('{user:42}:cart', 'item-99');
+  } else if (name === 'moved') {
+    if (state.mode !== 'cluster') { switchMode('cluster'); }
+    banner(`<strong>MOVED redirect:</strong> Client's slot map is stale. It hits the wrong shard, gets MOVED, updates its map, and retries.`, 'info');
+    // Corrupt the slot map artificially: pick a random key, find its real shard, then point the client elsewhere
+    const key = 'product:777';
+    const slot = slotOf(key);
+    const real = shardForSlot(slot);
+    const wrong = state.shards.find(s => s.id !== real.id);
+    state.client.slotMap[slot] = wrong.id;
+    log(`(simulated stale slot map: client thinks slot ${slot} is on shard ${wrong.id})`, 'l-info');
+    document.getElementById('keyInput').value = key;
+    document.getElementById('valInput').value = 'widget';
+    await cmdSet(key, 'widget');
+  } else if (name === 'ask') {
+    if (state.mode !== 'cluster') { switchMode('cluster'); }
+    if (state.shards.length < 2) { banner('Need at least 2 shards for slot migration.', 'warn'); return; }
+    const key = 'session:abc';
+    const slot = slotOf(key);
+    const fromShard = shardForSlot(slot);
+    const toShard = state.shards.find(s => s.id !== fromShard.id);
+    state.migrating = { slot, fromShard, toShard, keysMoved: new Set() };
+    banner(`<strong>ASK redirect:</strong> Slot ${slot} is migrating from shard ${fromShard.id} → ${toShard.id}. The source replies ASK; client retries on destination with ASKING prefix.`, 'info');
+    log(`(slot ${slot} migration started: shard ${fromShard.id} → ${toShard.id})`, 'l-redir');
+    document.getElementById('keyInput').value = key;
+    document.getElementById('valInput').value = 'token-xyz';
+    await cmdSet(key, 'token-xyz');
+    await sleep(800);
+    state.migrating = null;
+    log(`(migration complete; slot ${slot} now owned by shard ${toShard.id} in real cluster)`, 'l-info');
+  } else if (name === 'failover') {
+    if (state.mode !== 'cluster') { switchMode('cluster'); }
+    // First write some data so failover meaningfully preserves it
+    await cmdSet('user:1', 'pre-failover-value');
+    await sleep(400);
+    const victim = state.shards[0].master;
+    banner(`<strong>Killing ${victim}.</strong> Watch the gossip → vote → promotion sequence.`, 'warn');
+    await killNode(victim);
+  } else if (name === 'refresh') {
+    if (state.mode !== 'cluster') { switchMode('cluster'); }
+    banner(`<strong>Topology refresh:</strong> Toggle dynamicRefreshSources and watch where the client sends CLUSTER NODES queries.`, 'info');
+    const cRect = clientRect();
+    if (state.client.dynamicRefresh) {
+      log(`refresh: querying all ${state.client.known.size} known nodes`, 'l-info');
+      Array.from(state.client.known).filter(id => state.nodes[id].alive).forEach((nid, i) => {
+        setTimeout(() => flyPacket(cRect, nodeRect(nid), 'CLUSTER NODES', 'refresh'), i * 100);
+      });
+    } else {
+      log(`refresh: querying ${state.client.seeds.length} seed nodes only`, 'l-info');
+      state.client.seeds.filter(id => state.nodes[id].alive).forEach((nid, i) => {
+        setTimeout(() => flyPacket(cRect, nodeRect(nid), 'CLUSTER NODES', 'refresh'), i * 150);
+      });
+    }
+    state.client.age = 0;
+  }
+}
+
+function switchMode(mode) {
+  state.mode = mode;
+  document.getElementById('btnCluster').classList.toggle('active', mode === 'cluster');
+  document.getElementById('btnStandalone').classList.toggle('active', mode === 'standalone');
+  if (mode === 'standalone') {
+    state.numMasters = 1;
+    document.getElementById('rngMasters').value = 1;
+    document.getElementById('rngMasters').disabled = true;
+    document.getElementById('lblMasters').textContent = 1;
+  } else {
+    document.getElementById('rngMasters').disabled = false;
+    state.numMasters = parseInt(document.getElementById('rngMasters').value) || 3;
+    if (state.numMasters < 3) {
+      state.numMasters = 3;
+      document.getElementById('rngMasters').value = 3;
+      document.getElementById('lblMasters').textContent = 3;
+    }
+  }
+  buildCluster();
+  document.getElementById('topoLabel').textContent = mode === 'cluster' ? 'Cluster topology' : 'Standalone topology';
+}
+
+// ============= EVENTS =============
+document.getElementById('btnCluster').onclick = () => switchMode('cluster');
+document.getElementById('btnStandalone').onclick = () => switchMode('standalone');
+
+document.getElementById('btnSet').onclick = () => {
+  const k = document.getElementById('keyInput').value.trim();
+  const v = document.getElementById('valInput').value;
+  if (!k) return;
+  cmdSet(k, v);
+};
+document.getElementById('btnGet').onclick = () => {
+  const k = document.getElementById('keyInput').value.trim();
+  if (!k) return;
+  cmdGet(k);
+};
+document.getElementById('btnDel').onclick = () => {
+  const k = document.getElementById('keyInput').value.trim();
+  if (!k) return;
+  cmdDel(k);
+};
+
+document.getElementById('rngMasters').oninput = (e) => {
+  if (state.mode === 'standalone') return;
+  state.numMasters = parseInt(e.target.value);
+  document.getElementById('lblMasters').textContent = state.numMasters;
+  buildCluster();
+};
+document.getElementById('rngReplicas').oninput = (e) => {
+  state.numReplicas = parseInt(e.target.value);
+  document.getElementById('lblReplicas').textContent = state.numReplicas;
+  buildCluster();
+};
+
+document.getElementById('swRefresh').onclick = function() {
+  this.classList.toggle('on');
+  state.client.dynamicRefresh = this.classList.contains('on');
+  document.getElementById('refreshHint').innerHTML = state.client.dynamicRefresh
+    ? '<strong style="color:#00d4aa;">ON</strong>: client refreshes topology from <em>all</em> known nodes (masters + replicas).'
+    : '<strong style="color:#ff4c4c;">OFF</strong>: client only refreshes from the <em>seed</em> nodes. Risky if all seeds die.';
+};
+document.getElementById('swReadReplica').onclick = function() {
+  this.classList.toggle('on');
+  state.client.readFromReplica = this.classList.contains('on');
+};
+document.getElementById('swPersist').onclick = function() {
+  this.classList.toggle('on');
+  state.client.persist = this.classList.contains('on');
+  render();
+};
+
+document.getElementById('btnReset').onclick = () => { clearBanner(); buildCluster(); log('cluster rebuilt', 'l-info'); };
+
+document.querySelectorAll('.btn-scenario').forEach(b => {
+  b.onclick = () => runScenario(b.dataset.scenario);
+});
+
+window.killOrRevive = killOrRevive;
+
+// ============= INIT =============
+buildCluster();
+log('Welcome — try SET / GET, run scenarios, or click a node to kill it.', 'l-info');
+</script>
+
+<script src="cookie-consent.js"></script>
+</body>
+</html>

@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spring MVC vs WebFlux — Live Threading & Concurrency Load Test Simulator</title>
+<meta name="description" content="Side-by-side load test simulator comparing Spring MVC thread-per-request vs Spring WebFlux reactive event loop. See thread pool exhaustion, backpressure, blocking call pitfalls, and p99 latency under real concurrency.">
+<meta name="keywords" content="spring mvc vs webflux, spring webflux tutorial, reactive programming java, thread per request vs event loop, spring boot concurrency, project reactor, netty vs tomcat">
+<meta name="robots" content="index, follow">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Spring MVC vs WebFlux — Live Threading & Concurrency Load Test Simulator">
+<meta property="og:description" content="Side-by-side load test comparing Spring MVC thread-per-request vs Spring WebFlux reactive event loop. See thread pool exhaustion, backpressure, and blocking call pitfalls.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Spring MVC vs WebFlux — Live Threading & Concurrency Load Test Simulator">
+<meta name="twitter:description" content="Side-by-side load test comparing Spring MVC thread-per-request vs Spring WebFlux reactive event loop. See thread pool exhaustion, backpressure, and blocking call pitfalls.">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; padding: 20px; }
+h1 { text-align: center; margin-bottom: 6px; color: #6db33f; }
+.subtitle { text-align: center; color: #888; margin-bottom: 18px; font-size: 14px; }
+a.back { color: #888; font-size: 12px; text-decoration: none; }
+a.back:hover { color: #6db33f; }
+.top-bar { display: flex; justify-content: space-between; align-items: center; max-width: 1500px; margin: 0 auto 14px; }
+
+.controls { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; align-items: center; max-width: 1500px; margin: 0 auto 14px; padding: 12px; background: #16213e; border-radius: 10px; border: 1px solid #2a3a5e; }
+.control { display: flex; flex-direction: column; gap: 4px; min-width: 130px; }
+.control label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+.control .v { font-size: 12px; color: #6db33f; font-weight: 700; font-family: monospace; }
+.control input[type=range] { accent-color: #6db33f; width: 130px; }
+
+button { padding: 8px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.15s; }
+button:hover:not(:disabled) { transform: translateY(-1px); }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-start { background: #6db33f; color: #1a1a2e; }
+.btn-stop { background: #ff4c4c; color: #fff; }
+.btn-reset { background: #333; color: #aaa; border: 1px solid #555; }
+.btn-scenario { padding: 6px 12px; border: 1px solid #3a4a6e; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600; background: #1a2a4a; color: #ccc; }
+.btn-scenario:hover { background: #2a3a6e; color: #fff; border-color: #6db33f; }
+.btn-scenario.active { background: #2a3a6e; border-color: #6db33f; color: #6db33f; }
+
+.scenarios { display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; margin-bottom: 14px; padding: 10px; background: #0d1b2a; border-radius: 8px; max-width: 1500px; margin-left: auto; margin-right: auto; }
+
+.banner { padding: 10px 14px; border-radius: 8px; margin: 0 auto 14px; font-size: 12px; line-height: 1.6; max-width: 1500px; }
+.banner.info { background: #0d1b2a; border: 1px solid #48dbfb; color: #cceeff; }
+.banner.warn { background: #2d1010; border: 1px solid #ff4c4c; color: #ffcccc; }
+.banner.ok { background: #0d2010; border: 1px solid #6db33f; color: #d0ffcc; }
+.banner code { background: #0a0a1a; padding: 1px 5px; border-radius: 3px; color: #ffb74d; font-size: 11px; }
+
+.comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 1500px; margin: 0 auto; }
+@media (max-width: 1000px) { .comparison { grid-template-columns: 1fr; } }
+
+.server { background: #16213e; border: 1px solid #2a3a5e; border-radius: 12px; padding: 14px; }
+.server.mvc { border-top: 3px solid #ffb74d; }
+.server.webflux { border-top: 3px solid #6db33f; }
+.server-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.server-title { font-size: 14px; font-weight: 700; }
+.server.mvc .server-title { color: #ffb74d; }
+.server.webflux .server-title { color: #6db33f; }
+.server-sub { font-size: 11px; color: #888; font-family: monospace; }
+
+/* Thread grid (MVC) */
+.section-label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin: 8px 0 4px; }
+.threads-grid { display: grid; grid-template-columns: repeat(20, 1fr); gap: 2px; padding: 6px; background: #0d1b2a; border-radius: 6px; min-height: 80px; }
+.thread { aspect-ratio: 1; border-radius: 2px; background: #2a3a5e; transition: background 0.1s; position: relative; }
+.thread.idle { background: #1e3a4e; }
+.thread.cpu { background: #ffb74d; }
+.thread.io { background: #ff4c4c; animation: pulseIO 0.8s ease infinite; }
+@keyframes pulseIO { 0%, 100% { opacity: 0.85; } 50% { opacity: 1; } }
+
+.queue-bar { background: #0d1b2a; border-radius: 6px; padding: 6px; margin-top: 8px; }
+.queue-bar-track { height: 16px; background: #1e2a3e; border-radius: 4px; overflow: hidden; position: relative; }
+.queue-bar-fill { height: 100%; background: linear-gradient(90deg, #ffb74d, #ff4c4c); transition: width 0.2s; }
+.queue-bar-text { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #fff; font-family: monospace; text-shadow: 0 0 3px #000; }
+
+/* Event loop (WebFlux) */
+.event-loop { display: flex; gap: 6px; padding: 8px; background: #0d1b2a; border-radius: 6px; }
+.eloop-thread { flex: 1; height: 32px; background: #1e3a4e; border-radius: 4px; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #888; font-family: monospace; }
+.eloop-thread.active { background: #2a4a3e; color: #6db33f; }
+.eloop-thread.active::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(90deg, transparent, rgba(109,179,63,0.3), transparent); animation: eloopPulse 1.5s linear infinite; }
+@keyframes eloopPulse { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+.eloop-thread.blocked { background: #4a1010; color: #ff4c4c; animation: blockedPulse 0.6s ease infinite; }
+@keyframes blockedPulse { 0%, 100% { background: #4a1010; } 50% { background: #6a1818; } }
+
+.inflight-cloud { background: #0d1b2a; border-radius: 6px; padding: 10px; margin-top: 8px; min-height: 80px; position: relative; overflow: hidden; }
+.inflight-label { font-size: 10px; color: #888; }
+.inflight-count { font-size: 22px; color: #6db33f; font-weight: 700; font-family: monospace; }
+.inflight-dots { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
+.inflight-dot { position: absolute; width: 4px; height: 4px; background: #6db33f; border-radius: 50%; opacity: 0.6; }
+
+/* Stats */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+.stat { background: #0d1b2a; border-radius: 6px; padding: 8px; text-align: center; }
+.stat-label { font-size: 9px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-value { font-size: 16px; color: #fff; font-weight: 700; font-family: monospace; margin-top: 2px; }
+.stat-value.warn { color: #ffb74d; }
+.stat-value.bad { color: #ff4c4c; }
+.stat-value.good { color: #6db33f; }
+.stat-sub { font-size: 9px; color: #666; margin-top: 1px; }
+
+/* Verdict line */
+.verdict { text-align: center; padding: 8px; margin: 10px auto 0; max-width: 1500px; font-size: 12px; color: #aaa; font-style: italic; }
+.verdict.win-mvc { color: #ffb74d; }
+.verdict.win-webflux { color: #6db33f; }
+
+/* Backpressure */
+.bp-section { max-width: 1500px; margin: 18px auto; background: #16213e; border-radius: 12px; padding: 16px; border: 1px solid #2a3a5e; }
+.bp-section summary { cursor: pointer; font-size: 14px; color: #6db33f; font-weight: 700; }
+.bp-controls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin: 12px 0; padding: 10px; background: #0d1b2a; border-radius: 8px; }
+.bp-mode-btn { padding: 6px 12px; border: 1px solid #3a4a6e; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600; background: #1a2a4a; color: #ccc; }
+.bp-mode-btn.active { background: #6db33f; color: #1a1a2e; border-color: #6db33f; }
+.bp-flow { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 12px; align-items: center; padding: 14px; background: #0d1b2a; border-radius: 8px; min-height: 130px; }
+.bp-actor { background: #1a2a4a; border-radius: 8px; padding: 10px; text-align: center; border: 2px solid #2a3a5e; }
+.bp-actor.producer { border-color: #ff4c4c; }
+.bp-actor.consumer { border-color: #48dbfb; }
+.bp-actor-title { font-size: 12px; font-weight: 700; }
+.bp-actor.producer .bp-actor-title { color: #ff4c4c; }
+.bp-actor.consumer .bp-actor-title { color: #48dbfb; }
+.bp-actor-stat { font-size: 10px; color: #888; margin-top: 4px; font-family: monospace; }
+.bp-buffer { background: #1a2a4a; border-radius: 8px; padding: 10px; border: 2px solid #2a3a5e; position: relative; }
+.bp-buffer-track { height: 32px; background: #0d1b2a; border-radius: 4px; overflow: hidden; position: relative; }
+.bp-buffer-fill { height: 100%; background: linear-gradient(90deg, #6db33f, #ffb74d); transition: width 0.2s; }
+.bp-buffer-fill.full { background: linear-gradient(90deg, #ff4c4c, #4a1010); }
+.bp-buffer-label { font-size: 10px; color: #888; text-align: center; margin-bottom: 4px; }
+.bp-buffer-count { position: absolute; top: 8px; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #fff; font-family: monospace; text-shadow: 0 0 3px #000; }
+.bp-signal { font-size: 10px; color: #888; text-align: center; margin-top: 6px; min-height: 14px; }
+.bp-signal.warn { color: #ff4c4c; font-weight: 600; }
+.bp-signal.ok { color: #6db33f; font-weight: 600; }
+
+/* Code comparison */
+.code-section { max-width: 1500px; margin: 18px auto; background: #16213e; border-radius: 12px; padding: 16px; border: 1px solid #2a3a5e; }
+.code-section summary { cursor: pointer; font-size: 14px; color: #6db33f; font-weight: 700; }
+.code-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+@media (max-width: 800px) { .code-grid { grid-template-columns: 1fr; } }
+.code-block { background: #0a0a1a; border-radius: 8px; padding: 12px; border: 1px solid #2a3a5e; overflow-x: auto; }
+.code-block .code-header { font-size: 11px; font-weight: 700; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+.code-block.mvc .code-header { color: #ffb74d; }
+.code-block.webflux .code-header { color: #6db33f; }
+.code-block pre { font-family: 'Menlo', 'Consolas', monospace; font-size: 11px; line-height: 1.55; color: #c8d0e0; white-space: pre; }
+.kw { color: #c084ff; }
+.ann { color: #6db33f; }
+.str { color: #ffb74d; }
+.cm { color: #5a6478; font-style: italic; }
+.ty { color: #48dbfb; }
+.fn { color: #ffe066; }
+.code-note { font-size: 11px; color: #888; margin-top: 8px; padding: 8px; background: #0d1b2a; border-radius: 6px; line-height: 1.5; }
+.code-note strong { color: #ffb74d; }
+
+/* Reference */
+.reference { max-width: 1500px; margin: 18px auto; background: #0d1b2a; border-radius: 12px; padding: 16px; border: 1px solid #2a3a5e; }
+.reference h2 { color: #ffb74d; font-size: 14px; margin-bottom: 10px; }
+.reference details { margin-bottom: 6px; padding: 8px 10px; background: #16213e; border-radius: 6px; border: 1px solid #2a3a5e; }
+.reference summary { cursor: pointer; font-size: 12px; color: #6db33f; font-weight: 600; }
+.reference details p, .reference details ul { color: #aaa; font-size: 12px; line-height: 1.6; margin-top: 6px; }
+.reference details ul { padding-left: 18px; }
+.reference code { background: #0a0a1a; padding: 1px 5px; border-radius: 3px; color: #ffb74d; font-size: 11px; }
+
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 10px; color: #aaa; padding: 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 4px; }
+.legend .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <a href="index.html" class="back">&larr; Back</a>
+  <div></div>
+</div>
+
+<h1>Spring MVC vs WebFlux</h1>
+<p class="subtitle">Same load, two concurrency models — watch where each one breaks</p>
+
+<div class="scenarios">
+  <span style="color:#888;font-size:11px;">Scenarios:</span>
+  <button class="btn-scenario" data-scenario="low">Low load</button>
+  <button class="btn-scenario" data-scenario="iobound">High concurrency, slow I/O</button>
+  <button class="btn-scenario" data-scenario="cpu">CPU-bound work</button>
+  <button class="btn-scenario" data-scenario="block">Blocking call in WebFlux 💥</button>
+  <button class="btn-scenario" data-scenario="custom">Custom</button>
+</div>
+
+<div class="controls">
+  <div class="control">
+    <label>Request rate</label>
+    <input type="range" id="rngRps" min="10" max="2000" step="10" value="200">
+    <span class="v"><span id="vRps">200</span> req/s</span>
+  </div>
+  <div class="control">
+    <label>I/O latency</label>
+    <input type="range" id="rngIo" min="5" max="500" step="5" value="100">
+    <span class="v"><span id="vIo">100</span> ms</span>
+  </div>
+  <div class="control">
+    <label>CPU per request</label>
+    <input type="range" id="rngCpu" min="0" max="50" step="1" value="2">
+    <span class="v"><span id="vCpu">2</span> ms</span>
+  </div>
+  <div class="control">
+    <label>MVC pool size</label>
+    <input type="range" id="rngPool" min="20" max="400" step="20" value="200">
+    <span class="v"><span id="vPool">200</span> threads</span>
+  </div>
+  <div class="control">
+    <label>WebFlux blocks I/O</label>
+    <input type="range" id="rngBlock" min="0" max="1" step="1" value="0">
+    <span class="v"><span id="vBlock">non-blocking</span></span>
+  </div>
+  <button class="btn-start" id="btnStart">▶ Start</button>
+  <button class="btn-stop" id="btnStop" disabled>■ Stop</button>
+  <button class="btn-reset" id="btnReset">Reset</button>
+</div>
+
+<div id="banner" class="banner info" style="display:none;"></div>
+
+<div class="comparison">
+
+  <!-- MVC -->
+  <div class="server mvc">
+    <div class="server-header">
+      <div>
+        <div class="server-title">Spring MVC (Tomcat)</div>
+        <div class="server-sub">thread-per-request · blocking I/O</div>
+      </div>
+      <div class="server-sub" id="mvcMem">~200 MB stacks</div>
+    </div>
+
+    <div class="section-label">Thread pool (each cell = 1 thread)</div>
+    <div class="threads-grid" id="mvcThreads"></div>
+    <div class="legend">
+      <span><span class="dot" style="background:#1e3a4e;"></span>idle</span>
+      <span><span class="dot" style="background:#ffb74d;"></span>running CPU</span>
+      <span><span class="dot" style="background:#ff4c4c;"></span>blocked on I/O</span>
+    </div>
+
+    <div class="section-label">Request queue</div>
+    <div class="queue-bar">
+      <div class="queue-bar-track">
+        <div class="queue-bar-fill" id="mvcQueueFill" style="width: 0%;"></div>
+        <div class="queue-bar-text"><span id="mvcQueueText">0 / 1000</span></div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="stat-label">Throughput</div><div class="stat-value" id="mvcRps">0</div><div class="stat-sub">req/s</div></div>
+      <div class="stat"><div class="stat-label">P99 latency</div><div class="stat-value" id="mvcP99">0</div><div class="stat-sub">ms</div></div>
+      <div class="stat"><div class="stat-label">Rejected</div><div class="stat-value" id="mvcRejected">0</div><div class="stat-sub">total</div></div>
+    </div>
+  </div>
+
+  <!-- WebFlux -->
+  <div class="server webflux">
+    <div class="server-header">
+      <div>
+        <div class="server-title">Spring WebFlux (Netty)</div>
+        <div class="server-sub">event loop · non-blocking I/O</div>
+      </div>
+      <div class="server-sub" id="wfMem">~50 MB</div>
+    </div>
+
+    <div class="section-label">Event loop threads (= CPU cores, here 4)</div>
+    <div class="event-loop" id="wfEventLoop"></div>
+    <div class="legend">
+      <span><span class="dot" style="background:#1e3a4e;"></span>idle</span>
+      <span><span class="dot" style="background:#2a4a3e;"></span>active</span>
+      <span><span class="dot" style="background:#4a1010;"></span>blocked (pitfall)</span>
+    </div>
+
+    <div class="section-label">In-flight I/O (parked, no thread cost)</div>
+    <div class="inflight-cloud">
+      <div class="inflight-label">requests waiting on I/O</div>
+      <div class="inflight-count" id="wfInflight">0</div>
+      <div class="inflight-dots" id="wfDots"></div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="stat-label">Throughput</div><div class="stat-value" id="wfRps">0</div><div class="stat-sub">req/s</div></div>
+      <div class="stat"><div class="stat-label">P99 latency</div><div class="stat-value" id="wfP99">0</div><div class="stat-sub">ms</div></div>
+      <div class="stat"><div class="stat-label">Rejected</div><div class="stat-value" id="wfRejected">0</div><div class="stat-sub">total</div></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="verdict" id="verdict">Configure load above and press Start. Run for ~10 seconds before comparing.</div>
+
+<!-- Backpressure -->
+<details class="bp-section" open>
+  <summary>Backpressure: fast producer, slow consumer</summary>
+  <p style="color:#aaa; font-size:12px; margin-top:8px; line-height:1.6;">
+    Reactive Streams give the consumer a way to <em>tell the producer to slow down</em>. Without it, a buffer between them just grows until you OOM.
+    Toggle the mode and watch the buffer.
+  </p>
+  <div class="bp-controls">
+    <button class="bp-mode-btn active" id="bpMvc">MVC-style (unbounded buffer)</button>
+    <button class="bp-mode-btn" id="bpWf">WebFlux-style (backpressure)</button>
+    <div class="control" style="margin-left:auto;">
+      <label>Producer rate</label>
+      <input type="range" id="bpProd" min="5" max="200" step="5" value="100">
+      <span class="v"><span id="vBpProd">100</span> items/s</span>
+    </div>
+    <div class="control">
+      <label>Consumer rate</label>
+      <input type="range" id="bpCons" min="5" max="200" step="5" value="20">
+      <span class="v"><span id="vBpCons">20</span> items/s</span>
+    </div>
+    <button class="btn-start" id="btnBpStart">▶ Run</button>
+    <button class="btn-reset" id="btnBpReset">Reset</button>
+  </div>
+  <div class="bp-flow">
+    <div class="bp-actor producer">
+      <div class="bp-actor-title">Producer</div>
+      <div class="bp-actor-stat" id="bpProdStat">emitting at 100/s</div>
+      <div class="bp-actor-stat" id="bpProdActual">actual: 0/s</div>
+    </div>
+    <div class="bp-buffer">
+      <div class="bp-buffer-label">Buffer</div>
+      <div class="bp-buffer-track">
+        <div class="bp-buffer-fill" id="bpFill" style="width:0%"></div>
+        <div class="bp-buffer-count" id="bpCount">0 / 256</div>
+      </div>
+      <div class="bp-signal" id="bpSignal">&nbsp;</div>
+    </div>
+    <div class="bp-actor consumer">
+      <div class="bp-actor-title">Consumer</div>
+      <div class="bp-actor-stat" id="bpConsStat">processing at 20/s</div>
+      <div class="bp-actor-stat" id="bpConsTotal">total: 0</div>
+    </div>
+  </div>
+</details>
+
+<!-- Code comparison -->
+<details class="code-section" open>
+  <summary>Code: same endpoint, two styles</summary>
+  <div class="code-grid">
+    <div class="code-block mvc">
+      <div class="code-header">Spring MVC — blocking</div>
+      <pre><span class="ann">@RestController</span>
+<span class="kw">public class</span> <span class="ty">UserController</span> {
+
+  <span class="ann">@Autowired</span> <span class="ty">UserRepo</span> repo;
+  <span class="ann">@Autowired</span> <span class="ty">RestTemplate</span> http;
+
+  <span class="ann">@GetMapping</span>(<span class="str">"/users/{id}"</span>)
+  <span class="kw">public</span> <span class="ty">UserDto</span> <span class="fn">getUser</span>(<span class="ann">@PathVariable</span> <span class="ty">Long</span> id) {
+    <span class="ty">User</span> user = repo.<span class="fn">findById</span>(id)         <span class="cm">// blocks thread</span>
+        .<span class="fn">orElseThrow</span>();
+    <span class="ty">Profile</span> p = http.<span class="fn">getForObject</span>(           <span class="cm">// blocks thread</span>
+        <span class="str">"/profile/"</span> + id, <span class="ty">Profile</span>.<span class="kw">class</span>);
+    <span class="kw">return new</span> <span class="ty">UserDto</span>(user, p);
+  }
+}</pre>
+      <div class="code-note"><strong>Threading:</strong> 1 servlet thread is held for the full <code>findById + REST call</code> duration. With 200 threads and 100ms latency you cap at ~2000 RPS before threads run out.</div>
+    </div>
+    <div class="code-block webflux">
+      <div class="code-header">Spring WebFlux — reactive</div>
+      <pre><span class="ann">@RestController</span>
+<span class="kw">public class</span> <span class="ty">UserController</span> {
+
+  <span class="ann">@Autowired</span> <span class="ty">ReactiveUserRepo</span> repo;
+  <span class="ann">@Autowired</span> <span class="ty">WebClient</span> http;
+
+  <span class="ann">@GetMapping</span>(<span class="str">"/users/{id}"</span>)
+  <span class="kw">public</span> <span class="ty">Mono</span>&lt;<span class="ty">UserDto</span>&gt; <span class="fn">getUser</span>(<span class="ann">@PathVariable</span> <span class="ty">Long</span> id) {
+    <span class="kw">return</span> repo.<span class="fn">findById</span>(id)              <span class="cm">// returns Mono&lt;User&gt;</span>
+      .<span class="fn">zipWith</span>(http.<span class="fn">get</span>()                     <span class="cm">// runs in parallel</span>
+        .<span class="fn">uri</span>(<span class="str">"/profile/{id}"</span>, id)
+        .<span class="fn">retrieve</span>()
+        .<span class="fn">bodyToMono</span>(<span class="ty">Profile</span>.<span class="kw">class</span>))
+      .<span class="fn">map</span>(t -&gt; <span class="kw">new</span> <span class="ty">UserDto</span>(t.<span class="fn">getT1</span>(), t.<span class="fn">getT2</span>()));
+  }
+}</pre>
+      <div class="code-note"><strong>Threading:</strong> The event loop schedules both calls and is freed immediately. The same 4 threads can have <em>thousands</em> of in-flight requests. <span style="color:#ff4c4c">Never</span> call blocking code (JDBC, <code>Thread.sleep</code>) from here — it stalls the entire server.</div>
+    </div>
+  </div>
+</details>
+
+<div class="reference">
+  <h2>Reference</h2>
+  <details>
+    <summary>When to pick Spring MVC</summary>
+    <ul>
+      <li>Most CRUD apps — simpler mental model, easier debugging</li>
+      <li>CPU-bound workloads — reactive doesn't help when CPU is the bottleneck</li>
+      <li>Heavy use of JDBC / JPA — the JDBC ecosystem is blocking by nature</li>
+      <li>Team unfamiliar with reactive — debugging stack traces across <code>flatMap</code> is hard</li>
+      <li>Low to medium concurrency (under ~2000 RPS) with reasonable latency</li>
+    </ul>
+  </details>
+  <details>
+    <summary>When to pick Spring WebFlux</summary>
+    <ul>
+      <li>High-concurrency I/O-bound services (10k+ concurrent connections)</li>
+      <li>API gateways, BFFs, proxies — making lots of downstream calls</li>
+      <li>Streaming endpoints — Server-Sent Events, WebSockets, large file streaming</li>
+      <li>Slow downstream services where you need to multiplex efficiently</li>
+      <li>You can use R2DBC or have only async data sources</li>
+    </ul>
+  </details>
+  <details>
+    <summary>Common pitfalls in WebFlux</summary>
+    <ul>
+      <li><strong>Blocking the event loop</strong> — <code>Thread.sleep</code>, JDBC, blocking <code>RestTemplate</code> all stall the server. Use <code>.publishOn(Schedulers.boundedElastic())</code> if you must.</li>
+      <li><strong>Forgetting to subscribe</strong> — a Mono/Flux is cold; if nothing subscribes, nothing happens. Spring subscribes for you on returned Monos, but inside your code you need to chain.</li>
+      <li><strong>Lost stack traces</strong> — operators run on different threads. Use <code>Hooks.onOperatorDebug()</code> in dev or <code>checkpoint()</code> at key points.</li>
+      <li><strong>ThreadLocal doesn't work</strong> — request-scoped state must use Reactor Context (<code>contextWrite</code>).</li>
+      <li><strong>Backpressure misuse</strong> — <code>onBackpressureBuffer()</code> with no bound just delays the OOM.</li>
+    </ul>
+  </details>
+  <details>
+    <summary>Why the thread-per-request model breaks under load</summary>
+    <p>If each request waits 100ms on a database call, one thread serves at most 10 req/s. 200 threads × 10 = 2000 RPS ceiling — and beyond that, requests pile up in the queue and start timing out. The only knobs are: bigger pool (more memory, more context-switching) or faster downstream (not always possible).</p>
+    <p>WebFlux sidesteps this entirely: the thread is freed during I/O wait, so the same 4 threads can serve tens of thousands of concurrent requests. The new ceiling is downstream capacity or CPU, not threads.</p>
+  </details>
+  <details>
+    <summary>What about Spring 6 / Project Loom virtual threads?</summary>
+    <p>Java 21+ virtual threads (Project Loom) let you keep MVC's simple programming model while getting WebFlux's concurrency. Each request still gets a "thread", but it's a virtual thread — millions are cheap, and JDBC blocking calls are transparently parked instead of holding an OS thread.</p>
+    <p>For new projects on JDK 21+, this is often the better answer than WebFlux: same code as MVC, similar throughput to WebFlux, no reactive learning curve. WebFlux still wins for streaming and backpressure scenarios.</p>
+  </details>
+</div>
+
+<script>
+// =================== STATE ===================
+const sim = {
+  running: false,
+  rps: 200,
+  ioMs: 100,
+  cpuMs: 2,
+  lastTickT: 0,
+  lastStatsT: 0,
+  mvc: {
+    poolSize: 200,
+    threads: [],   // { state: 'idle'|'cpu'|'io', freeAt: 0, startAt: 0, cpuUntil: 0 }
+    queue: [],     // [{ arrivedAt }]
+    maxQueue: 1000,
+    completedSinceLast: 0,
+    rejected: 0,
+    latencies: [], // ring of last N completion latencies
+    arrivalAcc: 0,
+  },
+  wf: {
+    eloop: [],     // { busy: bool, blockedUntil: 0 } x 4
+    inflight: [],  // { completeAt, startAt }
+    blocking: false,
+    completedSinceLast: 0,
+    rejected: 0,
+    latencies: [],
+    arrivalAcc: 0,
+    maxInflight: 50000,
+  },
+  scenario: null,
+};
+
+const ELOOP_THREADS = 4;
+const LATENCY_WINDOW = 200;
+const STATS_INTERVAL = 1000;
+
+// =================== INIT ===================
+function rebuildMvc() {
+  sim.mvc.threads = [];
+  for (let i = 0; i < sim.mvc.poolSize; i++) {
+    sim.mvc.threads.push({ state: 'idle', freeAt: 0, startAt: 0, cpuUntil: 0 });
+  }
+  renderMvcThreads();
+}
+
+function rebuildWf() {
+  sim.wf.eloop = [];
+  for (let i = 0; i < ELOOP_THREADS; i++) {
+    sim.wf.eloop.push({ busy: false, blockedUntil: 0 });
+  }
+  renderWfEloop();
+}
+
+function renderMvcThreads() {
+  const grid = document.getElementById('mvcThreads');
+  // Always render up to poolSize cells but cap at, say, 400 for DOM perf
+  const visible = Math.min(sim.mvc.poolSize, 400);
+  // Adapt grid columns to size
+  const cols = sim.mvc.poolSize <= 50 ? 10 : sim.mvc.poolSize <= 100 ? 14 : 20;
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  if (grid.childElementCount !== visible) {
+    grid.innerHTML = '';
+    for (let i = 0; i < visible; i++) {
+      const d = document.createElement('div');
+      d.className = 'thread idle';
+      grid.appendChild(d);
+    }
+  }
+}
+
+function renderWfEloop() {
+  const el = document.getElementById('wfEventLoop');
+  if (el.childElementCount !== ELOOP_THREADS) {
+    el.innerHTML = '';
+    for (let i = 0; i < ELOOP_THREADS; i++) {
+      const d = document.createElement('div');
+      d.className = 'eloop-thread';
+      d.textContent = `EL-${i}`;
+      el.appendChild(d);
+    }
+  }
+}
+
+// =================== SIMULATION ===================
+function arriveMvc(now) {
+  const idle = sim.mvc.threads.findIndex(t => t.state === 'idle');
+  if (idle !== -1) {
+    const t = sim.mvc.threads[idle];
+    t.state = 'io';
+    t.startAt = now;
+    t.freeAt = now + sim.ioMs;
+    t.cpuUntil = t.freeAt + sim.cpuMs;
+    return;
+  }
+  if (sim.mvc.queue.length < sim.mvc.maxQueue) {
+    sim.mvc.queue.push({ arrivedAt: now });
+  } else {
+    sim.mvc.rejected++;
+  }
+}
+
+function arriveWf(now) {
+  if (sim.wf.blocking) {
+    // Pretend WebFlux code accidentally calls a blocking JDBC: each request blocks 1 of the 4 threads
+    const idle = sim.wf.eloop.findIndex(t => !t.busy);
+    if (idle !== -1) {
+      sim.wf.eloop[idle].busy = true;
+      sim.wf.eloop[idle].blockedUntil = now + sim.ioMs;
+      sim.wf.inflight.push({ completeAt: now + sim.ioMs, startAt: now, threadIdx: idle, blocking: true });
+      return;
+    }
+    // No event loop thread free → request waits in tiny Netty queue (we model as rejected after small buffer)
+    // For simplicity, a small buffer of 50 then rejections
+    const queued = sim.wf.inflight.filter(r => r.blocking && r.threadIdx === -1).length;
+    if (queued < 50) {
+      sim.wf.inflight.push({ completeAt: now + sim.ioMs * 2, startAt: now, threadIdx: -1, blocking: true });
+    } else {
+      sim.wf.rejected++;
+    }
+    return;
+  }
+  // Non-blocking: event loop just schedules the I/O; thread stays available
+  if (sim.wf.inflight.length >= sim.wf.maxInflight) { sim.wf.rejected++; return; }
+  // Slight jitter on completion time
+  const jitter = (Math.random() * 0.2 - 0.1) * sim.ioMs;
+  sim.wf.inflight.push({ completeAt: now + sim.ioMs + jitter, startAt: now, threadIdx: -1, blocking: false });
+}
+
+function tickMvc(now) {
+  for (const t of sim.mvc.threads) {
+    if (t.state === 'io' && now >= t.freeAt) {
+      t.state = 'cpu';
+    }
+    if (t.state === 'cpu' && now >= t.cpuUntil) {
+      const lat = now - t.startAt;
+      sim.mvc.latencies.push(lat);
+      if (sim.mvc.latencies.length > LATENCY_WINDOW) sim.mvc.latencies.shift();
+      sim.mvc.completedSinceLast++;
+      if (sim.mvc.queue.length > 0) {
+        const q = sim.mvc.queue.shift();
+        t.state = 'io';
+        t.startAt = q.arrivedAt; // latency includes queue wait
+        t.freeAt = now + sim.ioMs;
+        t.cpuUntil = t.freeAt + sim.cpuMs;
+      } else {
+        t.state = 'idle';
+      }
+    }
+  }
+}
+
+function tickWf(now) {
+  // Reset event loop "busy" flags for non-blocking mode (always active when inflight > 0)
+  if (!sim.wf.blocking) {
+    const active = sim.wf.inflight.length > 0;
+    for (const e of sim.wf.eloop) {
+      e.busy = active;
+      e.blockedUntil = 0;
+    }
+  } else {
+    for (const e of sim.wf.eloop) {
+      if (e.busy && now >= e.blockedUntil) e.busy = false;
+    }
+  }
+  // Process completed inflight (kept sorted by completeAt)
+  let i = 0;
+  while (i < sim.wf.inflight.length && sim.wf.inflight[i].completeAt <= now) {
+    const r = sim.wf.inflight[i];
+    sim.wf.completedSinceLast++;
+    sim.wf.latencies.push(now - r.startAt);
+    if (sim.wf.latencies.length > LATENCY_WINDOW) sim.wf.latencies.shift();
+    // If blocking mode and a queued request is waiting (threadIdx === -1), promote it
+    if (sim.wf.blocking && r.threadIdx >= 0) {
+      const queued = sim.wf.inflight.find(rr => rr.blocking && rr.threadIdx === -1 && rr.completeAt > now);
+      if (queued) {
+        queued.threadIdx = r.threadIdx;
+        queued.completeAt = now + sim.ioMs;
+        sim.wf.eloop[r.threadIdx].busy = true;
+        sim.wf.eloop[r.threadIdx].blockedUntil = queued.completeAt;
+      }
+    }
+    i++;
+  }
+  if (i > 0) sim.wf.inflight.splice(0, i);
+}
+
+function tick() {
+  if (!sim.running) return;
+  const now = performance.now();
+  const dt = (now - sim.lastTickT) / 1000;
+  sim.lastTickT = now;
+
+  // Arrivals (Poisson-ish: deterministic accumulator)
+  sim.mvc.arrivalAcc += sim.rps * dt;
+  sim.wf.arrivalAcc += sim.rps * dt;
+  while (sim.mvc.arrivalAcc >= 1) { arriveMvc(now); sim.mvc.arrivalAcc -= 1; }
+  while (sim.wf.arrivalAcc >= 1) { arriveWf(now); sim.wf.arrivalAcc -= 1; }
+
+  tickMvc(now);
+  tickWf(now);
+
+  renderState();
+
+  if (now - sim.lastStatsT >= STATS_INTERVAL) {
+    updateStats(now - sim.lastStatsT);
+    sim.lastStatsT = now;
+  }
+
+  requestAnimationFrame(tick);
+}
+
+// =================== RENDER ===================
+function renderState() {
+  // MVC threads
+  const grid = document.getElementById('mvcThreads');
+  const cells = grid.children;
+  for (let i = 0; i < cells.length; i++) {
+    const t = sim.mvc.threads[i];
+    const cls = t ? `thread ${t.state}` : 'thread idle';
+    if (cells[i].className !== cls) cells[i].className = cls;
+  }
+
+  // MVC queue
+  const qPct = Math.min(100, (sim.mvc.queue.length / sim.mvc.maxQueue) * 100);
+  document.getElementById('mvcQueueFill').style.width = qPct + '%';
+  document.getElementById('mvcQueueText').textContent = `${sim.mvc.queue.length} / ${sim.mvc.maxQueue}`;
+
+  // WebFlux event loop
+  const el = document.getElementById('wfEventLoop').children;
+  for (let i = 0; i < el.length; i++) {
+    const e = sim.wf.eloop[i];
+    let cls = 'eloop-thread';
+    if (sim.wf.blocking && e.busy) cls += ' blocked';
+    else if (e.busy) cls += ' active';
+    if (el[i].className !== cls) el[i].className = cls;
+  }
+
+  // In-flight count
+  document.getElementById('wfInflight').textContent = sim.wf.inflight.length;
+  renderInflightDots();
+}
+
+function renderInflightDots() {
+  const cloud = document.getElementById('wfDots');
+  const target = Math.min(40, Math.floor(sim.wf.inflight.length / 5) + (sim.wf.inflight.length > 0 ? 3 : 0));
+  if (cloud.childElementCount !== target) {
+    cloud.innerHTML = '';
+    const w = cloud.parentElement.clientWidth - 20;
+    const h = 80;
+    for (let i = 0; i < target; i++) {
+      const d = document.createElement('div');
+      d.className = 'inflight-dot';
+      d.style.left = (10 + Math.random() * w) + 'px';
+      d.style.top = (10 + Math.random() * (h - 20)) + 'px';
+      d.style.opacity = (0.3 + Math.random() * 0.5).toFixed(2);
+      cloud.appendChild(d);
+    }
+  }
+}
+
+function p99(arr) {
+  if (arr.length === 0) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length * 0.99)] | 0;
+}
+
+function updateStats(elapsedMs) {
+  const elapsedS = elapsedMs / 1000;
+  const mvcRps = Math.round(sim.mvc.completedSinceLast / elapsedS);
+  const wfRps = Math.round(sim.wf.completedSinceLast / elapsedS);
+  document.getElementById('mvcRps').textContent = mvcRps;
+  document.getElementById('wfRps').textContent = wfRps;
+
+  const mvcP = p99(sim.mvc.latencies);
+  const wfP = p99(sim.wf.latencies);
+  document.getElementById('mvcP99').textContent = mvcP;
+  document.getElementById('wfP99').textContent = wfP;
+
+  document.getElementById('mvcRejected').textContent = sim.mvc.rejected;
+  document.getElementById('wfRejected').textContent = sim.wf.rejected;
+
+  // Color stats
+  setStatColor('mvcP99', mvcP, sim.ioMs * 1.5, sim.ioMs * 5);
+  setStatColor('wfP99', wfP, sim.ioMs * 1.5, sim.ioMs * 5);
+  setStatColor('mvcRejected', sim.mvc.rejected, 1, 100);
+  setStatColor('wfRejected', sim.wf.rejected, 1, 100);
+
+  // Memory estimates
+  document.getElementById('mvcMem').textContent = `~${(sim.mvc.poolSize * 1).toFixed(0)} MB stacks`;
+  document.getElementById('wfMem').textContent = `~${(50 + sim.wf.inflight.length * 0.005).toFixed(0)} MB`;
+
+  sim.mvc.completedSinceLast = 0;
+  sim.wf.completedSinceLast = 0;
+
+  updateVerdict(mvcRps, wfRps, mvcP, wfP);
+}
+
+function setStatColor(id, val, warnAt, badAt) {
+  const el = document.getElementById(id);
+  el.classList.remove('warn', 'bad', 'good');
+  if (val >= badAt) el.classList.add('bad');
+  else if (val >= warnAt) el.classList.add('warn');
+  else if (val > 0) el.classList.add('good');
+}
+
+function updateVerdict(mvcRps, wfRps, mvcP, wfP) {
+  const v = document.getElementById('verdict');
+  v.classList.remove('win-mvc', 'win-webflux');
+  if (sim.wf.blocking) {
+    v.textContent = '⚠ WebFlux event loop is blocked — same throughput cap as MVC, but with only 4 threads. This is the worst case.';
+    v.classList.add('win-mvc');
+    return;
+  }
+  const target = sim.rps;
+  const mvcCanKeepUp = sim.mvc.queue.length < 50 && mvcRps >= target * 0.9;
+  const wfCanKeepUp = wfRps >= target * 0.9;
+  if (sim.cpuMs > sim.ioMs) {
+    v.textContent = 'CPU-bound: both stacks are limited by CPU. WebFlux brings no advantage here.';
+  } else if (mvcCanKeepUp && wfCanKeepUp) {
+    v.textContent = 'Both stacks keep up at this load. MVC\'s simpler model is usually preferable.';
+  } else if (!mvcCanKeepUp && wfCanKeepUp) {
+    v.textContent = `MVC thread pool is saturated (queue ${sim.mvc.queue.length}). WebFlux serves the same load with 4 event loop threads.`;
+    v.classList.add('win-webflux');
+  } else if (!mvcCanKeepUp && !wfCanKeepUp) {
+    v.textContent = 'Both are saturated — downstream I/O is the bottleneck.';
+  } else {
+    v.textContent = 'Tuning load…';
+  }
+}
+
+// =================== CONTROLS ===================
+function bindRange(id, vId, onChange, formatter) {
+  const r = document.getElementById(id);
+  const v = document.getElementById(vId);
+  const apply = () => {
+    const val = parseInt(r.value);
+    v.textContent = formatter ? formatter(val) : val;
+    onChange(val);
+  };
+  r.oninput = apply;
+  apply();
+}
+
+bindRange('rngRps', 'vRps', (v) => sim.rps = v);
+bindRange('rngIo', 'vIo', (v) => sim.ioMs = v);
+bindRange('rngCpu', 'vCpu', (v) => sim.cpuMs = v);
+bindRange('rngPool', 'vPool', (v) => { sim.mvc.poolSize = v; rebuildMvc(); });
+bindRange('rngBlock', 'vBlock', (v) => sim.wf.blocking = v === 1, (v) => v === 1 ? 'BLOCKING 💥' : 'non-blocking');
+
+document.getElementById('btnStart').onclick = () => {
+  if (sim.running) return;
+  sim.running = true;
+  sim.lastTickT = performance.now();
+  sim.lastStatsT = performance.now();
+  document.getElementById('btnStart').disabled = true;
+  document.getElementById('btnStop').disabled = false;
+  requestAnimationFrame(tick);
+};
+document.getElementById('btnStop').onclick = () => {
+  sim.running = false;
+  document.getElementById('btnStart').disabled = false;
+  document.getElementById('btnStop').disabled = true;
+};
+document.getElementById('btnReset').onclick = () => {
+  sim.running = false;
+  document.getElementById('btnStart').disabled = false;
+  document.getElementById('btnStop').disabled = true;
+  sim.mvc.queue = [];
+  sim.mvc.rejected = 0;
+  sim.mvc.latencies = [];
+  sim.mvc.arrivalAcc = 0;
+  sim.wf.inflight = [];
+  sim.wf.rejected = 0;
+  sim.wf.latencies = [];
+  sim.wf.arrivalAcc = 0;
+  rebuildMvc();
+  rebuildWf();
+  renderState();
+  updateStats(1000);
+  document.getElementById('verdict').textContent = 'Reset. Press Start.';
+  document.getElementById('verdict').classList.remove('win-mvc', 'win-webflux');
+};
+
+// =================== SCENARIOS ===================
+const scenarios = {
+  low:     { rps: 100,  ioMs: 50,  cpuMs: 2,  pool: 200, block: 0, banner: '<strong>Low load:</strong> Both stacks handle this trivially. MVC is simpler — pick it.' },
+  iobound: { rps: 1500, ioMs: 200, cpuMs: 2,  pool: 200, block: 0, banner: '<strong>High concurrency, slow I/O:</strong> 1500 req/s × 200ms = 300 needed in-flight, but MVC has only 200 threads → queue fills, latency explodes. WebFlux cruises.' },
+  cpu:     { rps: 200,  ioMs: 5,   cpuMs: 30, pool: 200, block: 0, banner: '<strong>CPU-bound:</strong> Each request burns 30ms of CPU. WebFlux gives no benefit — you\'re bottlenecked on CPU. With MVC, the simpler model wins.' },
+  block:   { rps: 800,  ioMs: 100, cpuMs: 2,  pool: 200, block: 1, banner: '<strong>The pitfall:</strong> WebFlux code accidentally calls JDBC. All 4 event loop threads block on I/O → entire WebFlux server falls over. MVC handles it because that\'s its native model.' },
+  custom:  null,
+};
+
+function applyScenario(name) {
+  document.querySelectorAll('.btn-scenario').forEach(b => b.classList.toggle('active', b.dataset.scenario === name));
+  const s = scenarios[name];
+  const banner = document.getElementById('banner');
+  if (!s) { banner.style.display = 'none'; return; }
+  document.getElementById('rngRps').value = s.rps; document.getElementById('rngRps').oninput();
+  document.getElementById('rngIo').value = s.ioMs; document.getElementById('rngIo').oninput();
+  document.getElementById('rngCpu').value = s.cpuMs; document.getElementById('rngCpu').oninput();
+  document.getElementById('rngPool').value = s.pool; document.getElementById('rngPool').oninput();
+  document.getElementById('rngBlock').value = s.block; document.getElementById('rngBlock').oninput();
+  banner.className = `banner ${name === 'block' ? 'warn' : 'info'}`;
+  banner.innerHTML = s.banner + ' Click <strong>Start</strong> and watch for ~10 seconds.';
+  banner.style.display = 'block';
+  document.getElementById('btnReset').click();
+}
+document.querySelectorAll('.btn-scenario').forEach(b => {
+  b.onclick = () => applyScenario(b.dataset.scenario);
+});
+
+// =================== BACKPRESSURE ===================
+const bp = {
+  running: false,
+  mode: 'mvc', // 'mvc' | 'wf'
+  prodRate: 100,
+  consRate: 20,
+  buffer: 0,
+  bufferCap: 256,
+  consumed: 0,
+  prodAcc: 0,
+  consAcc: 0,
+  signaled: false, // wf demand signal
+  prodActual: 0,
+  prodActualCount: 0,
+  prodActualT: 0,
+  lastT: 0,
+};
+function bpTick() {
+  if (!bp.running) return;
+  const now = performance.now();
+  const dt = (now - bp.lastT) / 1000;
+  bp.lastT = now;
+
+  // Producer
+  let effectiveProd = bp.prodRate;
+  if (bp.mode === 'wf' && bp.buffer >= bp.bufferCap) {
+    // Backpressure: producer matches consumer
+    effectiveProd = bp.consRate;
+    bp.signaled = true;
+  } else {
+    bp.signaled = false;
+  }
+  bp.prodAcc += effectiveProd * dt;
+  while (bp.prodAcc >= 1) {
+    if (bp.mode === 'mvc') {
+      bp.buffer++;
+    } else {
+      if (bp.buffer < bp.bufferCap) bp.buffer++;
+    }
+    bp.prodActualCount++;
+    bp.prodAcc -= 1;
+  }
+
+  // Consumer
+  bp.consAcc += bp.consRate * dt;
+  while (bp.consAcc >= 1) {
+    if (bp.buffer > 0) { bp.buffer--; bp.consumed++; }
+    bp.consAcc -= 1;
+  }
+
+  // Update producer actual rate every 500ms
+  if (now - bp.prodActualT >= 500) {
+    bp.prodActual = Math.round((bp.prodActualCount / ((now - bp.prodActualT) / 1000)));
+    bp.prodActualT = now;
+    bp.prodActualCount = 0;
+  }
+
+  // Render
+  const cap = bp.mode === 'mvc' ? Math.max(bp.bufferCap, bp.buffer) : bp.bufferCap;
+  const pct = bp.mode === 'mvc' ? Math.min(100, (bp.buffer / 1000) * 100) : (bp.buffer / bp.bufferCap) * 100;
+  const fill = document.getElementById('bpFill');
+  fill.style.width = pct + '%';
+  fill.classList.toggle('full', bp.mode === 'mvc' ? bp.buffer >= 500 : bp.buffer >= bp.bufferCap);
+  document.getElementById('bpCount').textContent = bp.mode === 'mvc'
+    ? `${bp.buffer}  (unbounded)`
+    : `${bp.buffer} / ${bp.bufferCap}`;
+  document.getElementById('bpProdActual').textContent = `actual: ${bp.prodActual}/s`;
+  document.getElementById('bpConsTotal').textContent = `total: ${bp.consumed}`;
+
+  const sig = document.getElementById('bpSignal');
+  if (bp.mode === 'mvc') {
+    if (bp.buffer >= 500) {
+      sig.className = 'bp-signal warn';
+      sig.textContent = '⚠ buffer growing unbounded — this is how reactive apps OOM without backpressure';
+    } else {
+      sig.className = 'bp-signal';
+      sig.textContent = 'buffer absorbs surplus (until OOM)';
+    }
+  } else {
+    if (bp.signaled) {
+      sig.className = 'bp-signal ok';
+      sig.textContent = '⇐ consumer signals demand · producer slowed to consumer rate';
+    } else {
+      sig.className = 'bp-signal';
+      sig.textContent = 'demand-driven flow (request(n))';
+    }
+  }
+  requestAnimationFrame(bpTick);
+}
+
+bindRange('bpProd', 'vBpProd', (v) => { bp.prodRate = v; document.getElementById('bpProdStat').textContent = `emitting at ${v}/s`; });
+bindRange('bpCons', 'vBpCons', (v) => { bp.consRate = v; document.getElementById('bpConsStat').textContent = `processing at ${v}/s`; });
+
+document.getElementById('bpMvc').onclick = () => {
+  bp.mode = 'mvc';
+  document.getElementById('bpMvc').classList.add('active');
+  document.getElementById('bpWf').classList.remove('active');
+};
+document.getElementById('bpWf').onclick = () => {
+  bp.mode = 'wf';
+  document.getElementById('bpWf').classList.add('active');
+  document.getElementById('bpMvc').classList.remove('active');
+};
+document.getElementById('btnBpStart').onclick = () => {
+  if (bp.running) {
+    bp.running = false;
+    document.getElementById('btnBpStart').textContent = '▶ Run';
+  } else {
+    bp.running = true;
+    bp.lastT = performance.now();
+    bp.prodActualT = performance.now();
+    document.getElementById('btnBpStart').textContent = '■ Pause';
+    requestAnimationFrame(bpTick);
+  }
+};
+document.getElementById('btnBpReset').onclick = () => {
+  bp.running = false;
+  bp.buffer = 0;
+  bp.consumed = 0;
+  bp.prodAcc = 0;
+  bp.consAcc = 0;
+  bp.prodActualCount = 0;
+  bp.prodActual = 0;
+  document.getElementById('btnBpStart').textContent = '▶ Run';
+  document.getElementById('bpFill').style.width = '0%';
+  document.getElementById('bpCount').textContent = bp.mode === 'mvc' ? '0  (unbounded)' : '0 / 256';
+  document.getElementById('bpSignal').textContent = ' ';
+};
+
+// =================== INIT ===================
+rebuildMvc();
+rebuildWf();
+renderState();
+</script>
+
+<script src="cookie-consent.js"></script>
+</body>
+</html>
