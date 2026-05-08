@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quartz Scheduler Cluster — How Multiple Pods Run Only 1 Job (Interactive)</title>
+<meta name="description" content="Interactive simulator for Spring Boot Quartz scheduler in clustered mode. Watch multiple pods race for a row lock, see all 11 QRTZ_ database tables update live, simulate misfire policies, kill pods to trigger failover and job recovery, and inspect Actuator health output.">
+<meta name="keywords" content="quartz cluster, spring boot quartz scheduler, quartz misfire policy, QRTZ_LOCKS, requestsRecovery, quartz failover, scheduler ha kubernetes, distributed cron job spring boot">
+<meta name="robots" content="index, follow">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Quartz Scheduler Cluster — How Multiple Pods Run Only 1 Job (Interactive)">
+<meta property="og:description" content="Watch pods race for a row lock, see QRTZ_ tables update live, simulate misfire and failover, inspect health probe output.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Quartz Scheduler Cluster — How Multiple Pods Run Only 1 Job (Interactive)">
+<meta name="twitter:description" content="Watch pods race for a row lock, see QRTZ_ tables update live, simulate misfire and failover, inspect health probe output.">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; padding: 20px; }
+h1 { text-align: center; margin-bottom: 6px; color: #00bfa5; }
+.subtitle { text-align: center; color: #888; margin-bottom: 22px; font-size: 14px; }
+a.back { color: #888; font-size: 12px; text-decoration: none; }
+a.back:hover { color: #00bfa5; }
+.top-bar { display: flex; justify-content: space-between; align-items: center; max-width: 1400px; margin: 0 auto 14px; }
+
+.section { max-width: 1400px; margin: 0 auto 24px; }
+.section-title { font-size: 16px; font-weight: 700; color: #00bfa5; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.section-title .badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: #0d2a26; border: 1px solid #00bfa5; color: #00bfa5; font-weight: 600; }
+.section-sub { color: #888; font-size: 12px; margin-bottom: 14px; line-height: 1.6; }
+.panel { background: #16213e; border: 1px solid #2a3a5e; border-radius: 12px; padding: 16px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+@media (max-width: 900px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+
+button { padding: 7px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.15s; font-family: inherit; }
+button:hover:not(:disabled) { transform: translateY(-1px); }
+button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.btn-primary { background: #00bfa5; color: #0a1a18; }
+.btn-danger  { background: #ff4c4c; color: #fff; }
+.btn-warn    { background: #ffb74d; color: #1a1a2e; }
+.btn-green   { background: #6db33f; color: #1a1a2e; }
+.btn-reset   { background: #333; color: #aaa; border: 1px solid #555; }
+.btn-blue    { background: #48dbfb; color: #1a1a2e; }
+
+select, input[type=text], input[type=number], textarea { background: #0d1b2a; color: #eee; border: 1px solid #2a3a5e; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-family: monospace; }
+input[type=range] { accent-color: #00bfa5; }
+label { font-size: 11px; color: #aaa; }
+.ctrl { display: flex; flex-direction: column; gap: 4px; }
+.ctrl .vv { font-size: 12px; color: #00bfa5; font-weight: 700; font-family: monospace; }
+
+/* presets */
+.presets-row { display: flex; gap: 10px; max-width: 1400px; margin: 0 auto 18px; flex-wrap: wrap; padding: 12px; background: #0d1b2a; border-radius: 8px; border: 1px solid #2a3a5e; align-items: center; }
+.presets-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px; }
+
+/* approach buttons */
+.approach-btns { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.approach-display { background: #16213e; border: 1px solid #2a3a5e; border-radius: 12px; padding: 16px; min-height: 130px; display: none; }
+.approach-display.active { display: block; }
+.ap-row { display: flex; gap: 12px; margin-bottom: 10px; font-size: 12px; line-height: 1.6; color: #c8d0e0; }
+.ap-row .icon { font-size: 18px; flex-shrink: 0; width: 24px; text-align: center; }
+.ap-code { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 11px; line-height: 1.6; color: #c8d0e0; margin: 8px 0; overflow-x: auto; white-space: pre; }
+.ap-code .kw { color: #c084ff; }
+.ap-code .str { color: #ffb74d; }
+.ap-code .cm { color: #5a6478; font-style: italic; }
+.ap-code .ann { color: #6db33f; }
+
+/* cron config */
+.cron-config { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; padding: 12px; background: #0d1b2a; border: 1px solid #2a3a5e; border-radius: 8px; margin-bottom: 14px; }
+.cron-config .cron-input { flex: 1; min-width: 240px; }
+.cron-config input[type=text].cron { width: 100%; font-size: 13px; font-family: monospace; padding: 8px 10px; }
+.cron-config input.cron.valid { border-color: #6db33f; }
+.cron-config input.cron.invalid { border-color: #ff4c4c; }
+.cron-status { font-size: 11px; margin-top: 4px; min-height: 14px; }
+.cron-status.ok { color: #6db33f; }
+.cron-status.bad { color: #ff4c4c; }
+.cron-presets { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.cron-chip { background: #1a2a4a; color: #00bfa5; padding: 4px 10px; border-radius: 12px; font-size: 11px; cursor: pointer; border: 1px solid #2a3a5e; transition: all 0.15s; font-family: monospace; }
+.cron-chip:hover { background: #0d2a26; border-color: #00bfa5; }
+.next-fire-list { font-size: 11px; color: #888; padding: 8px 12px; background: #0a0a0a; border-radius: 6px; font-family: monospace; line-height: 1.7; min-width: 240px; }
+.next-fire-list .nf-label { color: #00bfa5; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* lock race */
+.race-controls { display: flex; gap: 12px; align-items: center; padding: 10px 12px; background: #0d1b2a; border: 1px solid #2a3a5e; border-radius: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.pods-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; padding: 16px; background: #0d1b2a; border: 1px solid #2a3a5e; border-radius: 10px; margin-bottom: 12px; }
+.pod-card { background: #1a2a4a; border: 2px solid #2a3a5e; border-radius: 10px; padding: 12px; transition: all 0.3s; position: relative; }
+.pod-card.racing { border-color: #ffb74d; background: #2a1f0a; box-shadow: 0 0 14px rgba(255, 183, 77, 0.4); animation: pulse 0.6s ease infinite; }
+.pod-card.winner { border-color: #6db33f; background: #0a2a1a; box-shadow: 0 0 14px rgba(109, 179, 63, 0.5); }
+.pod-card.busy { border-color: #00bfa5; background: #0d2a26; }
+.pod-card.dead { opacity: 0.3; border-style: dashed; }
+@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.02); } }
+.pod-card .pod-name { font-size: 13px; font-weight: 700; color: #c8d0e0; }
+.pod-card .pod-id { font-size: 9px; color: #666; font-family: monospace; margin-bottom: 6px; }
+.pod-card .pod-state { font-size: 11px; font-weight: 600; margin: 6px 0; padding: 4px 8px; border-radius: 4px; background: #0a0a0a; text-align: center; }
+.pod-card.racing .pod-state { color: #ffb74d; }
+.pod-card.winner .pod-state, .pod-card.busy .pod-state { color: #6db33f; }
+.pod-card.dead .pod-state { color: #ff4c4c; }
+.pod-card .pod-stat { font-size: 10px; color: #888; font-family: monospace; display: flex; justify-content: space-between; }
+.pod-card .pod-stat .k { color: #666; }
+.pod-card .pod-stat .v { color: #c8d0e0; }
+.pod-card .pod-actions { margin-top: 8px; display: flex; gap: 4px; }
+.pod-card .pod-actions button { padding: 3px 8px; font-size: 10px; }
+
+.race-bar { padding: 8px 12px; background: #0a0a0a; border-radius: 6px; font-size: 11px; color: #888; font-family: monospace; margin-bottom: 12px; display: flex; gap: 16px; flex-wrap: wrap; }
+.race-bar .rb-item .k { color: #666; }
+.race-bar .rb-item .v { color: #00bfa5; font-weight: 700; }
+
+.sql-terminal { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 12px; font-family: 'Menlo', 'Consolas', monospace; font-size: 11px; min-height: 180px; max-height: 280px; overflow-y: auto; }
+.sql-line { margin-bottom: 3px; line-height: 1.5; }
+.sql-pod { color: #00bfa5; font-weight: 700; }
+.sql-stmt { color: #c8d0e0; }
+.sql-result-ok { color: #6db33f; }
+.sql-result-fail { color: #ffb74d; }
+.sql-comment { color: #555; }
+.sql-time { color: #666; }
+
+/* QRTZ tables */
+.tables-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+.qrtz-table { background: #0d1b2a; border: 1px solid #2a3a5e; border-radius: 8px; overflow: hidden; transition: all 0.2s; cursor: pointer; }
+.qrtz-table.expanded { grid-column: 1 / -1; cursor: default; }
+.qrtz-table:hover:not(.expanded) { border-color: #00bfa5; }
+.qrtz-table-header { padding: 10px 12px; background: #1a2a4a; display: flex; justify-content: space-between; align-items: center; }
+.qrtz-table-name { font-family: monospace; font-size: 12px; color: #00bfa5; font-weight: 700; }
+.qrtz-table-info { font-size: 10px; color: #888; }
+.qrtz-table-body { padding: 8px 12px; }
+.qrtz-table-desc { font-size: 11px; color: #888; line-height: 1.5; margin-bottom: 6px; }
+.qrtz-row { font-family: monospace; font-size: 10px; padding: 4px 8px; background: #0a0a0a; border-radius: 4px; margin-bottom: 3px; color: #c8d0e0; transition: all 0.3s; }
+.qrtz-row.locked { background: #2a1f0a; color: #ffb74d; }
+.qrtz-row.fresh { animation: rowFlash 1s ease; }
+@keyframes rowFlash { 0% { background: #0d2a26; transform: scale(1.05); } 100% { background: #0a0a0a; transform: scale(1); } }
+.qrtz-row .col { color: #48dbfb; }
+.qrtz-row .val { color: #c8d0e0; }
+.qrtz-row .stale { color: #ff4c4c; text-decoration: line-through; }
+
+/* misfire timeline */
+.timeline-controls { display: flex; gap: 12px; align-items: flex-end; padding: 12px; background: #0d1b2a; border: 1px solid #2a3a5e; border-radius: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.timeline { background: #0d1b2a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 16px; position: relative; min-height: 200px; overflow-x: auto; }
+.tl-axis { position: relative; height: 60px; background: #0a0a0a; border-radius: 4px; margin-bottom: 14px; }
+.tl-tick { position: absolute; top: 0; bottom: 0; border-left: 1px solid #2a3a5e; font-size: 9px; color: #555; padding-left: 4px; padding-top: 4px; }
+.tl-fire { position: absolute; top: 8px; width: 18px; height: 18px; border-radius: 50%; background: #00bfa5; border: 2px solid #0a0a0a; transform: translateX(-50%); transition: all 0.3s; cursor: pointer; }
+.tl-fire.scheduled { background: #2a3a5e; }
+.tl-fire.executed { background: #6db33f; }
+.tl-fire.skipped { background: #555; opacity: 0.5; }
+.tl-fire.replayed { background: #ffb74d; }
+.tl-fire-label { position: absolute; top: 32px; transform: translateX(-50%); font-size: 9px; color: #888; white-space: nowrap; }
+.tl-downtime { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(45deg, #2a0a0a, #2a0a0a 6px, #1a0a0a 6px, #1a0a0a 12px); border-left: 2px solid #ff4c4c; border-right: 2px solid #ff4c4c; }
+.tl-downtime-label { position: absolute; top: -16px; left: 4px; font-size: 9px; color: #ff4c4c; font-weight: 700; }
+.tl-legend { display: flex; gap: 14px; flex-wrap: wrap; padding: 8px; background: #0a0a0a; border-radius: 6px; font-size: 11px; }
+.tl-legend .item { display: flex; align-items: center; gap: 6px; color: #888; }
+.tl-legend .swatch { width: 12px; height: 12px; border-radius: 50%; }
+.tl-output { padding: 10px 12px; background: #0a0a0a; border-radius: 6px; font-family: monospace; font-size: 11px; line-height: 1.7; color: #c8d0e0; margin-top: 12px; }
+.tl-output .out-num { color: #00bfa5; font-weight: 700; font-size: 18px; }
+.tl-output .out-label { color: #888; font-size: 11px; }
+
+/* failover */
+.failover-controls { display: flex; gap: 12px; align-items: center; padding: 10px 12px; background: #0d1b2a; border: 1px solid #2a3a5e; border-radius: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.event-log { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 11px; max-height: 240px; overflow-y: auto; }
+.event-log .ev { margin-bottom: 3px; line-height: 1.5; }
+.ev-time { color: #555; }
+.ev-info { color: #c8d0e0; }
+.ev-warn { color: #ffb74d; }
+.ev-err { color: #ff4c4c; }
+.ev-ok { color: #6db33f; }
+.ev-pod { color: #00bfa5; font-weight: 700; }
+
+/* health */
+.health-toggles { display: flex; gap: 14px; padding: 12px; background: #0d1b2a; border: 1px solid #2a3a5e; border-radius: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.toggle-group { display: flex; flex-direction: column; gap: 4px; }
+.toggle-group label { font-size: 11px; color: #aaa; }
+.toggle-group input[type=checkbox] { accent-color: #00bfa5; transform: scale(1.2); }
+.health-output { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 14px; font-family: monospace; font-size: 12px; line-height: 1.7; white-space: pre; overflow-x: auto; }
+.h-key { color: #48dbfb; }
+.h-up { color: #6db33f; font-weight: 700; }
+.h-down { color: #ff4c4c; font-weight: 700; }
+.h-num { color: #ffb74d; }
+.h-str { color: #c8d0e0; }
+.health-probe { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 8px; margin-top: 10px; font-size: 12px; }
+.health-probe.ready { background: #0a2a1a; border: 1px solid #6db33f; color: #6db33f; }
+.health-probe.notready { background: #2a0a0a; border: 1px solid #ff4c4c; color: #ff4c4c; }
+.health-probe .probe-icon { font-size: 18px; }
+
+/* reference */
+.ref-section { max-width: 1400px; margin: 0 auto 24px; background: #0d1b2a; border-radius: 12px; padding: 16px; border: 1px solid #2a3a5e; }
+.ref-section h2 { color: #00bfa5; font-size: 14px; margin-bottom: 10px; }
+.ref-section details { margin-bottom: 6px; padding: 8px 10px; background: #16213e; border-radius: 6px; border: 1px solid #2a3a5e; }
+.ref-section summary { cursor: pointer; font-size: 12px; color: #00bfa5; font-weight: 600; }
+.ref-section details p, .ref-section details ul, .ref-section details pre { color: #aaa; font-size: 12px; line-height: 1.7; margin-top: 8px; }
+.ref-section details ul { padding-left: 18px; }
+.ref-section code, .ref-section pre { background: #0a0a1a; padding: 1px 5px; border-radius: 3px; color: #ffb74d; font-size: 11px; font-family: monospace; }
+.ref-section pre { padding: 10px; display: block; white-space: pre; overflow-x: auto; line-height: 1.6; }
+
+.warn-box { background: #2d1010; border: 1px solid #ff4c4c; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #ffcccc; line-height: 1.6; margin-bottom: 12px; }
+.warn-box strong { color: #ff4c4c; }
+.info-box { background: #0d2a26; border: 1px solid #00bfa5; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #c0e8e2; line-height: 1.6; margin-bottom: 12px; }
+.info-box strong { color: #00bfa5; }
+.challenge-box { background: #1a1f3a; border: 1px solid #00bfa5; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; font-size: 12px; color: #c0e8e2; line-height: 1.6; }
+.challenge-box strong { color: #00bfa5; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <a href="index.html" class="back">&larr; Back</a>
+</div>
+<h1>Quartz Cluster on Spring Boot</h1>
+<p class="subtitle">Multiple pods &middot; one execution per fire &middot; misfire policies &middot; failover recovery &middot; all interactive</p>
+
+<!-- =================== SCENARIO PRESETS =================== -->
+<div class="presets-row">
+  <span class="presets-label">Scenario:</span>
+  <button class="btn-green" onclick="preset('happy')">✅ Happy path (3 pods, every 10s)</button>
+  <button class="btn-warn" onclick="preset('crash')">💥 Pod crashes mid-job</button>
+  <button class="btn-warn" onclick="preset('downtime')">🔥 Misfire after downtime</button>
+  <button class="btn-danger" onclick="preset('cliff')">🐌 Performance cliff (8 pods)</button>
+  <button class="btn-reset" onclick="preset('reset')">↻ Reset</button>
+</div>
+
+<!-- =================== SECTION 1: WHAT IS QUARTZ =================== -->
+<div class="section">
+  <div class="section-title">What is Quartz and why "clustered"? <span class="badge">click each option</span></div>
+  <div class="section-sub">
+    You have a scheduled job (e.g. nightly billing report). Your service runs as 3 pods on Kubernetes. How do you guarantee the job runs exactly once at every fire time? Pick an approach below.
+  </div>
+
+  <div class="approach-btns">
+    <button class="btn-danger" onclick="showApproach('naive')">Option A — Naive @Scheduled on N pods</button>
+    <button class="btn-warn" onclick="showApproach('pin')">Option B — Pin to one pod</button>
+    <button class="btn-green" onclick="showApproach('quartz')">Option C — Clustered Quartz ✅</button>
+  </div>
+
+  <div id="approachDisplay" class="approach-display"></div>
+</div>
+
+<!-- =================== SECTION 2: LOCK RACE =================== -->
+<div class="section">
+  <div class="section-title">2. The lock race — only 1 pod wins each fire <span class="badge">live sim</span></div>
+  <div class="section-sub">
+    When a trigger fires, every pod tries <code style="color:#ffb74d;">SELECT … FROM QRTZ_LOCKS WHERE LOCK_NAME='TRIGGER_ACCESS' FOR UPDATE</code>. The DB grants the row lock to exactly one pod — the rest block briefly, then see no triggers to acquire and back off.
+    <br><strong style="color:#00bfa5;">Predict-then-verify:</strong> over 100 fires with 4 pods, what's the rough split? (Run it and find out.)
+  </div>
+
+  <div class="cron-config">
+    <div class="cron-input">
+      <div class="cron-presets">
+        <span class="cron-chip" onclick="setCron('0/10 * * * * ?')">Every 10 sec</span>
+        <span class="cron-chip" onclick="setCron('0 * * * * ?')">Every minute</span>
+        <span class="cron-chip" onclick="setCron('0 0/5 * * * ?')">Every 5 min</span>
+        <span class="cron-chip" onclick="setCron('0 0 * * * ?')">Hourly</span>
+        <span class="cron-chip" onclick="setCron('0 0 2 * * ?')">Daily 02:00</span>
+        <span class="cron-chip" onclick="setCron('0 0 9 ? * MON-FRI')">Weekday 09:00</span>
+      </div>
+      <label>Cron expression (Quartz format: sec min hour dom month dow)</label>
+      <input type="text" class="cron" id="iCron" value="0/10 * * * * ?">
+      <div class="cron-status" id="cronStatus"></div>
+    </div>
+    <div class="next-fire-list" id="nextFires"></div>
+  </div>
+
+  <div class="race-controls">
+    <div class="ctrl">
+      <label>Pod count: <span class="vv" id="vPods">3</span></label>
+      <input type="range" id="iPodCount" min="2" max="8" step="1" value="3">
+    </div>
+    <div class="ctrl">
+      <label>Sim speed: <span class="vv" id="vSpeed">1×</span></label>
+      <input type="range" id="iSpeed" min="0.5" max="20" step="0.5" value="1">
+    </div>
+    <button class="btn-primary" id="btnSimStart" onclick="toggleSim()">▶ Start</button>
+    <button class="btn-blue" onclick="fireNow()">⚡ Fire now</button>
+    <button class="btn-reset" onclick="resetSim()">↻ Reset</button>
+  </div>
+
+  <div class="race-bar">
+    <span class="rb-item"><span class="k">Sim time: </span><span class="v" id="rbSimTime">—</span></span>
+    <span class="rb-item"><span class="k">Next fire: </span><span class="v" id="rbNextFire">—</span></span>
+    <span class="rb-item"><span class="k">Total fires: </span><span class="v" id="rbTotalFires">0</span></span>
+    <span class="rb-item"><span class="k">Per-pod execution count below ▼</span></span>
+  </div>
+
+  <div class="pods-grid" id="podsGrid"></div>
+
+  <div class="grid2">
+    <div>
+      <div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">SQL terminal — actual lock queries</div>
+      <div class="sql-terminal" id="sqlTerm"><div class="sql-line sql-comment"># Press "Start" to begin simulation</div></div>
+    </div>
+    <div>
+      <div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Why this works — the core insight</div>
+      <div style="background:#0d1b2a; border:1px solid #2a3a5e; border-radius:8px; padding:14px; font-size:12px; color:#c8d0e0; line-height:1.7;">
+        <p style="margin-bottom:8px;"><strong style="color:#00bfa5;">SELECT FOR UPDATE</strong> is a row-level pessimistic lock. The first transaction to acquire the row blocks all others until it commits or rolls back.</p>
+        <p style="margin-bottom:8px;">Quartz uses this on a single row in <code style="color:#ffb74d;">QRTZ_LOCKS</code> with <code style="color:#ffb74d;">LOCK_NAME='TRIGGER_ACCESS'</code>. While one pod holds it, no other pod can acquire triggers.</p>
+        <p style="margin-bottom:8px;">The winner picks up the trigger from <code style="color:#ffb74d;">QRTZ_TRIGGERS</code>, marks it ACQUIRED, inserts a row into <code style="color:#ffb74d;">QRTZ_FIRED_TRIGGERS</code>, releases the lock, then runs the job.</p>
+        <p style="color:#ffb74d;"><strong>Cost:</strong> this serializes trigger acquisition cluster-wide. Beyond ~3 nodes, contention starts to matter.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- =================== SECTION 3: QRTZ TABLES =================== -->
+<div class="section">
+  <div class="section-title">3. QRTZ_ database tables — what's written when <span class="badge">11 tables</span></div>
+  <div class="section-sub">
+    Click any table to expand it. Watch rows appear/update as triggers fire. <strong style="color:#00bfa5;">Three tables matter most:</strong> <code style="color:#ffb74d;">QRTZ_LOCKS</code> (the lock row), <code style="color:#ffb74d;">QRTZ_FIRED_TRIGGERS</code> (currently running jobs), and <code style="color:#ffb74d;">QRTZ_SCHEDULER_STATE</code> (heartbeats — used for failover detection).
+  </div>
+
+  <div class="tables-grid" id="tablesGrid"></div>
+</div>
+
+<!-- =================== SECTION 4: MISFIRE =================== -->
+<div class="section">
+  <div class="section-title">4. Misfire policies — what happens when the scheduler is down <span class="badge">timeline sim</span></div>
+  <div class="section-sub">
+    A misfire happens when a trigger should have fired but couldn't (scheduler shutdown, no thread available, DB unreachable). The policy decides what to do when the scheduler comes back.
+    <br><strong style="color:#00bfa5;">Challenge:</strong> Hourly job, scheduler down for 4 hours — which policy gives 1 execution? 4? 0?
+  </div>
+
+  <div class="timeline-controls">
+    <div class="ctrl" style="min-width:180px;">
+      <label>Misfire policy</label>
+      <select id="iMisfire">
+        <option value="smart">smartPolicy (default)</option>
+        <option value="fireOnce">MISFIRE_INSTRUCTION_FIRE_ONCE_NOW</option>
+        <option value="doNothing">MISFIRE_INSTRUCTION_DO_NOTHING</option>
+        <option value="ignore">MISFIRE_INSTRUCTION_IGNORE_MISFIRE_POLICY</option>
+      </select>
+    </div>
+    <div class="ctrl">
+      <label>Job interval: <span class="vv" id="vTlInterval">10 min</span></label>
+      <input type="range" id="iTlInterval" min="5" max="60" step="5" value="10">
+    </div>
+    <div class="ctrl">
+      <label>Downtime: <span class="vv" id="vTlDowntime">35 min</span></label>
+      <input type="range" id="iTlDowntime" min="5" max="120" step="5" value="35">
+    </div>
+    <button class="btn-primary" onclick="renderTimeline()">Recalculate</button>
+  </div>
+
+  <div class="timeline" id="timeline"></div>
+
+  <div class="tl-legend" style="margin-top:12px;">
+    <div class="item"><span class="swatch" style="background:#2a3a5e;"></span> Scheduled fire</div>
+    <div class="item"><span class="swatch" style="background:#6db33f;"></span> Executed</div>
+    <div class="item"><span class="swatch" style="background:#ffb74d;"></span> Replayed (catch-up)</div>
+    <div class="item"><span class="swatch" style="background:#555;"></span> Skipped</div>
+    <div class="item"><span class="swatch" style="background:#ff4c4c; border-radius:0;"></span> Downtime</div>
+  </div>
+
+  <div class="grid3" style="margin-top:12px;">
+    <div class="tl-output">
+      <div class="out-num" id="outScheduled">—</div>
+      <div class="out-label">Total scheduled fires (in window)</div>
+    </div>
+    <div class="tl-output">
+      <div class="out-num" id="outExecuted">—</div>
+      <div class="out-label">Actual executions</div>
+    </div>
+    <div class="tl-output">
+      <div class="out-num" id="outSkipped">—</div>
+      <div class="out-label">Skipped (no execution)</div>
+    </div>
+  </div>
+
+  <div class="info-box" id="misfireExplain" style="margin-top:14px;"></div>
+</div>
+
+<!-- =================== SECTION 5: FAILOVER =================== -->
+<div class="section">
+  <div class="section-title">5. Failover &amp; recovery — pod dies mid-job <span class="badge">kill sim</span></div>
+  <div class="section-sub">
+    Click "Kill" on any pod while it's running a job. Watch <code style="color:#ffb74d;">QRTZ_SCHEDULER_STATE</code> stop heartbeating, the cluster detect the failure after the checkin interval expires, and (if <code style="color:#ffb74d;">requestsRecovery=true</code>) re-fire the job on a healthy pod.
+  </div>
+
+  <div class="failover-controls">
+    <div class="toggle-group">
+      <label><input type="checkbox" id="iRecovery" checked> JobDetail.requestsRecovery = true</label>
+      <span style="font-size:10px; color:#666;">If unchecked, killed jobs are dropped on the floor</span>
+    </div>
+    <div class="ctrl">
+      <label>Checkin interval: <span class="vv" id="vCheckin">7.5s</span></label>
+      <input type="range" id="iCheckin" min="2" max="30" step="0.5" value="7.5">
+    </div>
+    <div style="font-size:11px; color:#888;">Use the Kill buttons on the pod cards above ▲</div>
+  </div>
+
+  <div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">Cluster event log — failure detection &amp; recovery</div>
+  <div class="event-log" id="eventLog"><div class="ev ev-info">Cluster idle. Start the simulation and kill a pod to see failover in action.</div></div>
+</div>
+
+<!-- =================== SECTION 6: HEALTH CHECK =================== -->
+<div class="section">
+  <div class="section-title">6. Health check — Spring Boot Actuator + Quartz indicator <span class="badge">live JSON</span></div>
+  <div class="section-sub">
+    Toggle a component to fail and watch <code style="color:#ffb74d;">/actuator/health</code> output update. Kubernetes uses this for readiness/liveness probes — a NotReady pod stops receiving traffic.
+    <br><strong style="color:#00bfa5;">Challenge:</strong> Cause the probe to fail — which specific component reports DOWN?
+  </div>
+
+  <div class="health-toggles">
+    <div class="toggle-group">
+      <label><input type="checkbox" id="iSchedStarted" checked> Scheduler started</label>
+    </div>
+    <div class="toggle-group">
+      <label><input type="checkbox" id="iDbUp" checked> DB connection up</label>
+    </div>
+    <div class="toggle-group">
+      <label><input type="checkbox" id="iThreadPool"> ThreadPool exhausted</label>
+    </div>
+    <div class="toggle-group">
+      <label><input type="checkbox" id="iDiskOk" checked> Disk space OK</label>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">GET /actuator/health</div>
+      <div class="health-output" id="healthJson"></div>
+      <div class="health-probe" id="probeReadiness"></div>
+      <div class="health-probe" id="probeLiveness"></div>
+    </div>
+    <div>
+      <div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">kubectl get pods (after readiness probe outcome)</div>
+      <div class="health-output" id="kubectlOutput"></div>
+      <div class="info-box" style="margin-top:10px;">
+        <strong>Production setup:</strong> use <code>/actuator/health/readiness</code> for the K8s readiness probe and <code>/actuator/health/liveness</code> for liveness. Don't use <code>/actuator/health</code> for both — a transient DB blip can liveness-fail your pod and trigger a restart loop.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- =================== REFERENCE =================== -->
+<div class="ref-section">
+  <h2>Reference — Spring Boot config, gotchas, the 11 tables</h2>
+
+  <details>
+    <summary>Spring Boot Quartz config — application.yml</summary>
+<pre>spring:
+  quartz:
+    job-store-type: jdbc
+    jdbc:
+      initialize-schema: never  <span class="cm"># run quartz_tables.sql manually in production</span>
+    properties:
+      org.quartz:
+        scheduler:
+          instanceName: ClusteredScheduler
+          instanceId: AUTO          <span class="cm"># auto-generates unique ID per pod</span>
+        jobStore:
+          class: org.springframework.scheduling.quartz.LocalDataSourceJobStore
+          driverDelegateClass: org.quartz.impl.jdbcjobstore.PostgreSQLDelegate
+          tablePrefix: QRTZ_
+          isClustered: true         <span class="cm"># THE switch — without this, behavior is undefined</span>
+          clusterCheckinInterval: 7500   <span class="cm"># ms — how often each pod heartbeats</span>
+          useProperties: false
+        threadPool:
+          class: org.quartz.simpl.SimpleThreadPool
+          threadCount: 10</pre>
+  </details>
+
+  <details>
+    <summary>The 11 QRTZ_ tables — what each one stores</summary>
+    <ul>
+      <li><code>QRTZ_JOB_DETAILS</code> — job class names, durability, requestsRecovery flag, JobDataMap</li>
+      <li><code>QRTZ_TRIGGERS</code> — trigger metadata (next/prev fire time, state, misfire instruction)</li>
+      <li><code>QRTZ_SIMPLE_TRIGGERS</code> — SimpleTrigger-specific data (repeat count, repeat interval)</li>
+      <li><code>QRTZ_CRON_TRIGGERS</code> — CronTrigger-specific (cron expression, time zone)</li>
+      <li><code>QRTZ_SIMPROP_TRIGGERS</code> — calendar/daily-time-interval triggers (simple properties)</li>
+      <li><code>QRTZ_BLOB_TRIGGERS</code> — serialized custom triggers (rarely used)</li>
+      <li><code>QRTZ_CALENDARS</code> — serialized Calendar objects (exclusion calendars)</li>
+      <li><code>QRTZ_PAUSED_TRIGGER_GRPS</code> — paused trigger groups</li>
+      <li><code>QRTZ_FIRED_TRIGGERS</code> — currently executing triggers (one row per running execution; key for failover detection)</li>
+      <li><code>QRTZ_SCHEDULER_STATE</code> — heartbeat row per scheduler instance with LAST_CHECKIN_TIME</li>
+      <li><code>QRTZ_LOCKS</code> — row-level lock table (TRIGGER_ACCESS, STATE_ACCESS, JOB_ACCESS, CALENDAR_ACCESS, MISFIRE_ACCESS)</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>@DisallowConcurrentExecution — the cluster-wide gotcha</summary>
+    <p>By default, Quartz is happy to fire the same job concurrently on different pods (or on the same pod for staggered triggers). If your job is non-idempotent — like sending an email or updating a balance — you don't want that.</p>
+    <p>Adding <code>@DisallowConcurrentExecution</code> on the JobDetail prevents concurrent runs <strong>cluster-wide</strong>. While job instance A is running on any pod, no other pod will fire the same JobKey.</p>
+    <p><strong>Trap:</strong> if pod A crashes mid-job and the lock is held forever in <code>QRTZ_FIRED_TRIGGERS</code>, you may see the job stuck. Recovery (next checkin) will release it. With <code>requestsRecovery=true</code>, it re-fires; without, it just unblocks future fires.</p>
+  </details>
+
+  <details>
+    <summary>Misfire instructions — the actual constants</summary>
+    <ul>
+      <li><code>MISFIRE_INSTRUCTION_SMART_POLICY</code> (default) — Quartz picks based on trigger type: simple = fire once now, cron = fire once now</li>
+      <li><code>MISFIRE_INSTRUCTION_FIRE_ONCE_NOW</code> — execute immediately, ignore how many were missed</li>
+      <li><code>MISFIRE_INSTRUCTION_DO_NOTHING</code> — skip all missed, wait for next regular fire</li>
+      <li><code>MISFIRE_INSTRUCTION_IGNORE_MISFIRE_POLICY</code> — disable misfire detection, fire all missed back-to-back (dangerous for high-frequency jobs)</li>
+    </ul>
+    <p>Set per-trigger when building it: <code>.withSchedule(cronSchedule(...).withMisfireHandlingInstructionFireAndProceed())</code></p>
+  </details>
+
+  <details>
+    <summary>Performance cliff at 3+ nodes</summary>
+    <p>The cluster-wide lock on <code>QRTZ_LOCKS:TRIGGER_ACCESS</code> serializes trigger acquisition. With 3 nodes the contention is mild. With 8+ nodes the lock becomes the bottleneck — pods spend more time waiting for the lock than running jobs.</p>
+    <p><strong>Workarounds:</strong></p>
+    <ul>
+      <li>Partition jobs across multiple Quartz scheduler instances (different schedulerName per shard)</li>
+      <li>Use <code>org.quartz.jobStore.acquireTriggersWithinLock=false</code> (older Quartz; modern versions handle this)</li>
+      <li>If you have thousands of short jobs, use a different tool (Celery / Sidekiq / k8s CronJob with sharding)</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>Common production bugs &amp; symptoms</summary>
+    <ul>
+      <li><strong>Job runs N times every fire</strong> — clustering wasn't enabled. Check <code>isClustered=true</code></li>
+      <li><strong>Two pods running the same instance</strong> — both pods got the same <code>instanceId</code> (don't hardcode it; use AUTO)</li>
+      <li><strong>Triggers fire all at once after restart</strong> — wrong misfire policy (IGNORE_MISFIRE_POLICY)</li>
+      <li><strong>Jobs stuck in QRTZ_FIRED_TRIGGERS forever</strong> — pod was killed without running the recovery cycle. Check checkinInterval is reasonable</li>
+      <li><strong>Clock drift between pods</strong> — checkin times become unreliable. Run NTP on every node</li>
+    </ul>
+  </details>
+</div>
+
+<script>
+// =================== STATE ===================
+const S = {
+  cron: '0/10 * * * * ?',
+  cronOk: true,
+  podCount: 3,
+  pods: [],
+  running: false,
+  speed: 1,
+  simNow: Date.now(),
+  realNow: performance.now(),
+  nextFireAt: 0,
+  totalFires: 0,
+  requestsRecovery: true,
+  checkinInterval: 7500,
+  schedulerStarted: true,
+  dbUp: true,
+  threadPool: false,
+  diskOk: true,
+  expandedTable: null,
+  qrtzRows: { fired: [], schedState: [], locks: [] },
+  events: [],
+};
+
+const PODS_INIT_NAMES = ['quartz-7d8b9c-abcd1', 'quartz-7d8b9c-fghi2', 'quartz-7d8b9c-jklm3', 'quartz-7d8b9c-nopq4', 'quartz-7d8b9c-rstu5', 'quartz-7d8b9c-vwxy6', 'quartz-7d8b9c-zabc7', 'quartz-7d8b9c-defg8'];
+
+function makePod(idx) {
+  return {
+    id: PODS_INIT_NAMES[idx],
+    instanceId: PODS_INIT_NAMES[idx].slice(-5).toUpperCase() + '-' + Math.floor(Math.random() * 90000 + 10000),
+    alive: true,
+    state: 'idle', // idle, racing, busy, dead
+    busyUntil: 0,
+    executions: 0,
+    lastCheckin: Date.now(),
+    currentJob: null,
+  };
+}
+
+function initPods() {
+  S.pods = [];
+  for (let i = 0; i < S.podCount; i++) S.pods.push(makePod(i));
+}
+
+// =================== CRON PARSER ===================
+function parseCronField(field, min, max, names) {
+  if (field === '*' || field === '?') return null;
+  if (names) {
+    for (const [k, v] of Object.entries(names)) {
+      field = field.replace(new RegExp('\\b' + k + '\\b', 'gi'), v);
+    }
+  }
+  const out = new Set();
+  const parts = field.split(',');
+  for (const part of parts) {
+    let step = 1;
+    let body = part;
+    if (part.includes('/')) {
+      const [b, s] = part.split('/');
+      body = b;
+      step = parseInt(s, 10);
+    }
+    let lo = min, hi = max;
+    if (body === '*' || body === '?') {
+      lo = min; hi = max;
+    } else if (body.includes('-')) {
+      const [a, b] = body.split('-').map(Number);
+      lo = a; hi = b;
+    } else {
+      lo = hi = parseInt(body, 10);
+    }
+    for (let v = lo; v <= hi; v += step) out.add(v);
+  }
+  return out;
+}
+
+function parseCron(expr) {
+  try {
+    const parts = expr.trim().split(/\s+/);
+    if (parts.length < 6 || parts.length > 7) return null;
+    const sec = parseCronField(parts[0], 0, 59);
+    const min = parseCronField(parts[1], 0, 59);
+    const hour = parseCronField(parts[2], 0, 23);
+    const dom = parseCronField(parts[3], 1, 31);
+    const mon = parseCronField(parts[4], 1, 12, { JAN: '1', FEB: '2', MAR: '3', APR: '4', MAY: '5', JUN: '6', JUL: '7', AUG: '8', SEP: '9', OCT: '10', NOV: '11', DEC: '12' });
+    const dow = parseCronField(parts[5], 0, 6, { SUN: '0', MON: '1', TUE: '2', WED: '3', THU: '4', FRI: '5', SAT: '6' });
+    return { sec, min, hour, dom, mon, dow };
+  } catch (e) { return null; }
+}
+
+function cronMatches(c, d) {
+  if (!c) return false;
+  if (c.sec && !c.sec.has(d.getSeconds())) return false;
+  if (c.min && !c.min.has(d.getMinutes())) return false;
+  if (c.hour && !c.hour.has(d.getHours())) return false;
+  if (c.dom && !c.dom.has(d.getDate())) return false;
+  if (c.mon && !c.mon.has(d.getMonth() + 1)) return false;
+  if (c.dow && !c.dow.has(d.getDay())) return false;
+  return true;
+}
+
+function nextFire(c, fromMs) {
+  if (!c) return null;
+  let t = new Date(fromMs + 1000);
+  t.setMilliseconds(0);
+  for (let i = 0; i < 366 * 24 * 60 * 60; i++) {
+    if (cronMatches(c, t)) return t.getTime();
+    t = new Date(t.getTime() + 1000);
+  }
+  return null;
+}
+
+function nextNFires(c, fromMs, n) {
+  const out = [];
+  let t = fromMs;
+  for (let i = 0; i < n; i++) {
+    const nf = nextFire(c, t);
+    if (!nf) break;
+    out.push(nf);
+    t = nf;
+  }
+  return out;
+}
+
+// =================== SECTION 1: APPROACHES ===================
+const APPROACHES = {
+  naive: {
+    color: '#ff4c4c',
+    title: '❌ Option A — Naive @Scheduled on N pods (broken)',
+    rows: [
+      { icon: '📛', text: 'You add <code>@Scheduled(cron="0 0 2 * * *")</code> to a method. Spring runs it inside <strong>every pod</strong>. With 3 pods, your billing job runs 3 times every night.' },
+      { icon: '💸', text: '<strong style="color:#ff4c4c">Real consequences:</strong> charge the customer 3× · send 3 duplicate emails · process the same Kafka batch 3 times · 3× DB writes' },
+      { icon: '⚠️', text: 'No coordination, no awareness of other pods. Every pod\'s in-memory scheduler thinks it\'s the only one.' },
+    ],
+    code: `<span class="cm">// THIS HAPPENS ON EVERY POD - DO NOT DO THIS IN PRODUCTION</span>
+<span class="kw">@Component</span>
+<span class="kw">public class</span> BillingJob {
+  <span class="kw">@Scheduled</span>(cron = <span class="str">"0 0 2 * * *"</span>)  <span class="cm">// fires on EVERY pod at 02:00</span>
+  <span class="kw">public void</span> processBilling() {
+    <span class="cm">// runs N times — once per pod</span>
+  }
+}`,
+  },
+  pin: {
+    color: '#ffb74d',
+    title: '⚠️ Option B — Pin to one pod (single point of failure)',
+    rows: [
+      { icon: '📌', text: 'Use a leader election library (ShedLock, K8s Lease) so only one pod runs the job. Fixes the duplicate problem.' },
+      { icon: '⚠️', text: '<strong style="color:#ffb74d">Problem 1:</strong> ShedLock is fine for simple cases but doesn\'t track job execution state, can\'t recover failed jobs, and has no misfire handling.' },
+      { icon: '⚠️', text: '<strong style="color:#ffb74d">Problem 2:</strong> Some teams take a shortcut — run a single pod (no replicas). Pod dies → no jobs run until ops reschedules.' },
+      { icon: '✅', text: 'For very simple cron jobs, ShedLock + Spring @Scheduled is a fine choice. For anything you actually care about, you want Quartz.' },
+    ],
+    code: `<span class="cm">// ShedLock - simpler alternative for trivial jobs</span>
+<span class="kw">@Scheduled</span>(cron = <span class="str">"0 0 2 * * *"</span>)
+<span class="kw">@SchedulerLock</span>(name = <span class="str">"BillingJob"</span>)
+<span class="kw">public void</span> processBilling() {
+  <span class="cm">// only one pod acquires the lock</span>
+  <span class="cm">// no recovery, no misfire policy, no failover detection</span>
+}`,
+  },
+  quartz: {
+    color: '#6db33f',
+    title: '✅ Option C — Quartz in clustered mode',
+    rows: [
+      { icon: '🎯', text: '<strong style="color:#6db33f">What it is:</strong> A scheduling engine where every pod connects to the same database. Job state, triggers, executions, and locks all live in shared QRTZ_ tables.' },
+      { icon: '🔒', text: '<strong style="color:#6db33f">How it works:</strong> When a trigger fires, all pods race to grab a row lock on QRTZ_LOCKS. Exactly one wins, runs the job, releases the lock. Load balancing is automatic — random in busy clusters.' },
+      { icon: '🛡️', text: '<strong style="color:#6db33f">Failover:</strong> Each pod heartbeats into QRTZ_SCHEDULER_STATE. If a pod stops heartbeating, the cluster detects it, releases its triggers, and (if requestsRecovery=true) re-fires its in-flight jobs on a healthy pod.' },
+      { icon: '⏪', text: '<strong style="color:#6db33f">Misfires:</strong> If the whole cluster was down for a while, configurable policies decide whether to catch up, skip, or fire all missed jobs.' },
+      { icon: '⬇️', text: 'Scroll down to see the lock race in action.' },
+    ],
+    code: `<span class="cm">// application.yml</span>
+<span class="kw">spring.quartz</span>:
+  <span class="kw">job-store-type</span>: <span class="str">jdbc</span>
+  <span class="kw">properties.org.quartz.jobStore.isClustered</span>: <span class="str">true</span>
+  <span class="kw">properties.org.quartz.scheduler.instanceId</span>: <span class="str">AUTO</span>
+
+<span class="cm">// JobBean</span>
+<span class="kw">@DisallowConcurrentExecution</span>  <span class="cm">// cluster-wide single execution</span>
+<span class="kw">public class</span> BillingJob <span class="kw">implements</span> Job { ... }`,
+  },
+};
+
+function showApproach(key) {
+  const a = APPROACHES[key];
+  const el = document.getElementById('approachDisplay');
+  el.classList.add('active');
+  el.style.borderColor = a.color;
+  let html = `<div style="font-size:13px; font-weight:700; color:${a.color}; margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid #2a3a5e;">${a.title}</div>`;
+  for (const r of a.rows) html += `<div class="ap-row"><span class="icon">${r.icon}</span><span>${r.text}</span></div>`;
+  if (a.code) html += `<div class="ap-code">${a.code}</div>`;
+  el.innerHTML = html;
+}
+
+// =================== SECTION 2: LOCK RACE ===================
+function setCron(c) {
+  document.getElementById('iCron').value = c;
+  S.cron = c;
+  validateCron();
+  updateNextFires();
+  renderTimeline();
+}
+
+function validateCron() {
+  const expr = document.getElementById('iCron').value;
+  const c = parseCron(expr);
+  S.cronOk = !!c;
+  S.cron = expr;
+  const input = document.getElementById('iCron');
+  input.classList.toggle('valid', S.cronOk);
+  input.classList.toggle('invalid', !S.cronOk);
+  const status = document.getElementById('cronStatus');
+  if (S.cronOk) {
+    status.className = 'cron-status ok';
+    status.textContent = '✓ valid Quartz cron expression';
+  } else {
+    status.className = 'cron-status bad';
+    status.textContent = '✗ invalid expression — expected: sec min hour dom month dow [year]';
+  }
+}
+
+function fmtTime(ms) {
+  const d = new Date(ms);
+  return d.toLocaleTimeString('en-US', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0').slice(0, 2);
+}
+function fmtTimeShort(ms) {
+  const d = new Date(ms);
+  return d.toLocaleTimeString('en-US', { hour12: false });
+}
+function fmtDateTime(ms) {
+  const d = new Date(ms);
+  const dt = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return dt + ' ' + d.toLocaleTimeString('en-US', { hour12: false });
+}
+
+function updateNextFires() {
+  const c = parseCron(S.cron);
+  if (!c) {
+    document.getElementById('nextFires').innerHTML = '<div class="nf-label">Next fire times</div><div style="color:#ff4c4c;">— invalid cron —</div>';
+    return;
+  }
+  const fires = nextNFires(c, S.simNow, 5);
+  let html = '<div class="nf-label">Next 5 fire times</div>';
+  for (const f of fires) html += `<div>${fmtDateTime(f)}</div>`;
+  document.getElementById('nextFires').innerHTML = html;
+}
+
+function renderPods() {
+  const el = document.getElementById('podsGrid');
+  let html = '';
+  for (const p of S.pods) {
+    const cls = p.state === 'racing' ? 'racing' : p.state === 'busy' ? 'busy' : p.state === 'winner' ? 'winner' : !p.alive ? 'dead' : '';
+    const stateText =
+      !p.alive ? '💀 DEAD' :
+      p.state === 'racing' ? 'RACING for lock…' :
+      p.state === 'busy' ? '🔧 RUNNING ' + (p.currentJob || 'job') :
+      p.state === 'winner' ? '✓ WON LOCK' : 'idle';
+    html += `<div class="pod-card ${cls}">
+      <div class="pod-name">${p.id}</div>
+      <div class="pod-id">${p.instanceId}</div>
+      <div class="pod-state">${stateText}</div>
+      <div class="pod-stat"><span class="k">Executions:</span><span class="v">${p.executions}</span></div>
+      <div class="pod-stat"><span class="k">Last checkin:</span><span class="v">${p.alive ? Math.round((Date.now() - p.lastCheckin) / 100) / 10 + 's ago' : '—'}</span></div>
+      <div class="pod-actions">
+        ${p.alive ? `<button class="btn-danger" onclick="killPod('${p.id}')">Kill</button>` : `<button class="btn-green" onclick="revivePod('${p.id}')">Revive</button>`}
+      </div>
+    </div>`;
+  }
+  el.innerHTML = html;
+}
+
+function logSql(podId, line, cls) {
+  const t = document.getElementById('sqlTerm');
+  const d = document.createElement('div');
+  d.className = 'sql-line';
+  d.innerHTML = `<span class="sql-time">${fmtTime(Date.now())}</span> <span class="sql-pod">[${podId}]</span> <span class="${cls}">${line}</span>`;
+  t.appendChild(d);
+  while (t.children.length > 80) t.removeChild(t.firstChild);
+  t.scrollTop = t.scrollHeight;
+}
+
+function logEvent(level, podId, msg) {
+  const cls = level === 'err' ? 'ev-err' : level === 'warn' ? 'ev-warn' : level === 'ok' ? 'ev-ok' : 'ev-info';
+  const t = document.getElementById('eventLog');
+  const d = document.createElement('div');
+  d.className = 'ev';
+  d.innerHTML = `<span class="ev-time">${fmtTime(Date.now())}</span> <span class="ev-pod">${podId ? '[' + podId + ']' : ''}</span> <span class="${cls}">${msg}</span>`;
+  t.insertBefore(d, t.firstChild);
+  while (t.children.length > 60) t.removeChild(t.lastChild);
+}
+
+function fireNow() {
+  const c = parseCron(S.cron);
+  if (!c) return;
+  S.totalFires++;
+  document.getElementById('rbTotalFires').textContent = S.totalFires;
+
+  const alivePods = S.pods.filter(p => p.alive && p.state !== 'busy');
+  if (alivePods.length === 0) {
+    logEvent('err', null, '⚠ No alive pods to fire trigger — fires accumulate as misfires');
+    return;
+  }
+
+  // All alive pods race
+  const winner = alivePods[Math.floor(Math.random() * alivePods.length)];
+  for (const p of alivePods) {
+    if (p === winner) continue;
+    p.state = 'racing';
+    logSql(p.id, `BEGIN; SELECT * FROM QRTZ_LOCKS WHERE LOCK_NAME='TRIGGER_ACCESS' FOR UPDATE;`, 'sql-stmt');
+    setTimeout(() => {
+      logSql(p.id, `→ blocked, waiting on lock held by ${winner.id}`, 'sql-result-fail');
+    }, 100);
+  }
+  // Winner gets lock first
+  logSql(winner.id, `BEGIN; SELECT * FROM QRTZ_LOCKS WHERE LOCK_NAME='TRIGGER_ACCESS' FOR UPDATE;`, 'sql-stmt');
+  setTimeout(() => {
+    winner.state = 'winner';
+    logSql(winner.id, `→ acquired lock (1 row)`, 'sql-result-ok');
+    setTimeout(() => {
+      logSql(winner.id, `UPDATE QRTZ_TRIGGERS SET TRIGGER_STATE='ACQUIRED' WHERE TRIGGER_NAME='trigger.BillingJob';`, 'sql-stmt');
+      logSql(winner.id, `INSERT INTO QRTZ_FIRED_TRIGGERS (ENTRY_ID, TRIGGER_NAME, INSTANCE_NAME, ...) VALUES ('${winner.instanceId}_${S.totalFires}', 'BillingJob', '${winner.instanceId}', ...);`, 'sql-stmt');
+      logSql(winner.id, `COMMIT;  -- lock released`, 'sql-result-ok');
+      // others retry, find no triggers
+      for (const p of alivePods) {
+        if (p === winner) continue;
+        logSql(p.id, `→ retry: no triggers in ACQUIRED state for me, COMMIT and back off`, 'sql-result-fail');
+        p.state = 'idle';
+      }
+      // winner runs job
+      winner.state = 'busy';
+      winner.currentJob = 'BillingJob';
+      winner.executions++;
+      // job duration: 1.5 - 4 seconds simulated
+      winner.busyUntil = Date.now() + (1500 + Math.random() * 2500);
+      logEvent('ok', winner.id, `Job execution started (BillingJob)`);
+      // add to QRTZ_FIRED_TRIGGERS
+      S.qrtzRows.fired.push({ entryId: `${winner.instanceId}_${S.totalFires}`, instanceName: winner.instanceId, jobName: 'BillingJob', firedTime: Date.now(), state: 'EXECUTING' });
+      renderTables();
+      renderPods();
+    }, 250);
+  }, 200);
+  renderPods();
+}
+
+function tickPods() {
+  const now = Date.now();
+  for (const p of S.pods) {
+    if (!p.alive) continue;
+    if (p.state === 'busy' && now >= p.busyUntil) {
+      p.state = 'idle';
+      logEvent('ok', p.id, `✓ Job completed (BillingJob)`);
+      // remove from QRTZ_FIRED_TRIGGERS
+      S.qrtzRows.fired = S.qrtzRows.fired.filter(r => r.instanceName !== p.instanceId);
+      renderTables();
+    }
+    // checkin
+    if (now - p.lastCheckin >= S.checkinInterval) {
+      p.lastCheckin = now;
+      // update QRTZ_SCHEDULER_STATE row
+      const existing = S.qrtzRows.schedState.find(r => r.instanceName === p.instanceId);
+      if (existing) existing.lastCheckin = now;
+      else S.qrtzRows.schedState.push({ instanceName: p.instanceId, lastCheckin: now, checkinInterval: S.checkinInterval });
+    }
+  }
+  // detect dead pods
+  for (const p of S.pods) {
+    if (!p.alive) continue;
+    // detection logic happens in detectFailures()
+  }
+  detectFailures();
+  renderPods();
+  renderTables();
+}
+
+function detectFailures() {
+  const now = Date.now();
+  const stale = S.pods.filter(p => !p.alive && S.qrtzRows.schedState.some(r => r.instanceName === p.instanceId && (now - r.lastCheckin) > S.checkinInterval * 2));
+  for (const dead of stale) {
+    const row = S.qrtzRows.schedState.find(r => r.instanceName === dead.instanceId);
+    if (row && !row.detected) {
+      row.detected = true;
+      const detector = S.pods.find(p => p.alive);
+      if (detector) {
+        logEvent('warn', detector.id, `⚠ Detected stale checkin from ${dead.instanceId} (>${S.checkinInterval / 1000 * 2}s) — marking instance failed`);
+        // Find any FIRED_TRIGGERS owned by dead instance
+        const orphans = S.qrtzRows.fired.filter(f => f.instanceName === dead.instanceId);
+        for (const orp of orphans) {
+          logEvent('warn', detector.id, `Releasing orphaned trigger ${orp.jobName} from ${dead.instanceId}`);
+          if (S.requestsRecovery) {
+            logEvent('ok', detector.id, `requestsRecovery=true → re-firing ${orp.jobName} on this pod`);
+            const target = detector;
+            target.state = 'busy';
+            target.currentJob = orp.jobName + ' (recovered)';
+            target.executions++;
+            target.busyUntil = Date.now() + 2000;
+            S.qrtzRows.fired.push({ entryId: target.instanceId + '_recovered_' + orp.entryId, instanceName: target.instanceId, jobName: orp.jobName + ' (recovered)', firedTime: Date.now(), state: 'EXECUTING' });
+          } else {
+            logEvent('err', detector.id, `requestsRecovery=false → ${orp.jobName} dropped, will not run again until next scheduled fire`);
+          }
+        }
+        // Remove stale records
+        S.qrtzRows.fired = S.qrtzRows.fired.filter(f => f.instanceName !== dead.instanceId);
+        S.qrtzRows.schedState = S.qrtzRows.schedState.filter(r => r.instanceName !== dead.instanceId);
+      }
+    }
+  }
+}
+
+function killPod(id) {
+  const p = S.pods.find(x => x.id === id);
+  if (!p || !p.alive) return;
+  p.alive = false;
+  p.state = 'dead';
+  logEvent('err', p.id, `💀 Pod killed (SIGKILL — heartbeat stops)`);
+  if (p.currentJob) logEvent('warn', p.id, `Job ${p.currentJob} interrupted — stuck in QRTZ_FIRED_TRIGGERS until cluster detects failure`);
+  renderPods();
+}
+
+function revivePod(id) {
+  const p = S.pods.find(x => x.id === id);
+  if (!p) return;
+  p.alive = true;
+  p.state = 'idle';
+  p.lastCheckin = Date.now();
+  p.currentJob = null;
+  logEvent('ok', p.id, `Pod restarted, joining cluster`);
+  renderPods();
+}
+
+function toggleSim() {
+  S.running = !S.running;
+  document.getElementById('btnSimStart').textContent = S.running ? '⏸ Pause' : '▶ Start';
+  document.getElementById('btnSimStart').className = S.running ? 'btn-warn' : 'btn-primary';
+  if (S.running) {
+    S.realNow = performance.now();
+    requestAnimationFrame(simTick);
+  }
+}
+
+function simTick(t) {
+  if (!S.running) return;
+  const dt = (t - S.realNow) / 1000 * S.speed;
+  S.realNow = t;
+  S.simNow += dt * 1000;
+
+  // check if a fire is due
+  const c = parseCron(S.cron);
+  if (c && S.nextFireAt === 0) S.nextFireAt = nextFire(c, S.simNow);
+  if (c && S.nextFireAt && S.simNow >= S.nextFireAt) {
+    fireNow();
+    S.nextFireAt = nextFire(c, S.simNow);
+  }
+
+  tickPods();
+  document.getElementById('rbSimTime').textContent = fmtTimeShort(S.simNow);
+  document.getElementById('rbNextFire').textContent = S.nextFireAt ? fmtTimeShort(S.nextFireAt) : '—';
+  requestAnimationFrame(simTick);
+}
+
+function resetSim() {
+  S.running = false;
+  document.getElementById('btnSimStart').textContent = '▶ Start';
+  document.getElementById('btnSimStart').className = 'btn-primary';
+  S.totalFires = 0;
+  S.simNow = Date.now();
+  S.nextFireAt = 0;
+  initPods();
+  S.qrtzRows = { fired: [], schedState: [], locks: [{ name: 'TRIGGER_ACCESS', heldBy: null }, { name: 'STATE_ACCESS', heldBy: null }] };
+  document.getElementById('sqlTerm').innerHTML = '<div class="sql-line sql-comment"># Reset. Press Start to begin.</div>';
+  document.getElementById('eventLog').innerHTML = '<div class="ev ev-info">Cluster idle.</div>';
+  document.getElementById('rbTotalFires').textContent = '0';
+  document.getElementById('rbSimTime').textContent = '—';
+  document.getElementById('rbNextFire').textContent = '—';
+  renderPods();
+  renderTables();
+}
+
+// =================== SECTION 3: QRTZ TABLES ===================
+const QRTZ_TABLES = [
+  { name: 'QRTZ_JOB_DETAILS', desc: 'Job class names, durability, requestsRecovery flag, JobDataMap', cols: 'JOB_NAME · JOB_GROUP · JOB_CLASS_NAME · IS_DURABLE · REQUESTS_RECOVERY' },
+  { name: 'QRTZ_TRIGGERS', desc: 'Trigger metadata — next/prev fire time, state (WAITING/ACQUIRED/EXECUTING)', cols: 'TRIGGER_NAME · NEXT_FIRE_TIME · PREV_FIRE_TIME · TRIGGER_STATE · MISFIRE_INSTR' },
+  { name: 'QRTZ_SIMPLE_TRIGGERS', desc: 'SimpleTrigger-specific data (repeat count, repeat interval)', cols: 'TRIGGER_NAME · REPEAT_COUNT · REPEAT_INTERVAL · TIMES_TRIGGERED' },
+  { name: 'QRTZ_CRON_TRIGGERS', desc: 'CronTrigger-specific (cron expression, timezone)', cols: 'TRIGGER_NAME · CRON_EXPRESSION · TIME_ZONE_ID' },
+  { name: 'QRTZ_SIMPROP_TRIGGERS', desc: 'Calendar-interval / daily-time-interval triggers', cols: 'TRIGGER_NAME · STR_PROP_1 · INT_PROP_1 · LONG_PROP_1' },
+  { name: 'QRTZ_BLOB_TRIGGERS', desc: 'Serialized custom triggers (rarely used)', cols: 'TRIGGER_NAME · BLOB_DATA' },
+  { name: 'QRTZ_CALENDARS', desc: 'Serialized Calendar objects for trigger exclusions', cols: 'CALENDAR_NAME · CALENDAR (BLOB)' },
+  { name: 'QRTZ_PAUSED_TRIGGER_GRPS', desc: 'Trigger groups currently paused', cols: 'TRIGGER_GROUP' },
+  { name: 'QRTZ_FIRED_TRIGGERS', desc: '⭐ Currently EXECUTING triggers — used for failover detection', cols: 'ENTRY_ID · TRIGGER_NAME · INSTANCE_NAME · FIRED_TIME · STATE · JOB_NAME' },
+  { name: 'QRTZ_SCHEDULER_STATE', desc: '⭐ Heartbeat row per scheduler instance — stale rows = dead pod', cols: 'INSTANCE_NAME · LAST_CHECKIN_TIME · CHECKIN_INTERVAL' },
+  { name: 'QRTZ_LOCKS', desc: '⭐ Row-level lock table — TRIGGER_ACCESS is the contention point', cols: 'LOCK_NAME (TRIGGER_ACCESS, STATE_ACCESS, JOB_ACCESS, CALENDAR_ACCESS, MISFIRE_ACCESS)' },
+];
+
+function renderTables() {
+  const el = document.getElementById('tablesGrid');
+  let html = '';
+  for (const t of QRTZ_TABLES) {
+    const expanded = S.expandedTable === t.name ? 'expanded' : '';
+    html += `<div class="qrtz-table ${expanded}" onclick="toggleTable('${t.name}')">
+      <div class="qrtz-table-header">
+        <span class="qrtz-table-name">${t.name}</span>
+        <span class="qrtz-table-info">${expanded ? '▾' : '▸'}</span>
+      </div>
+      <div class="qrtz-table-body">
+        <div class="qrtz-table-desc">${t.desc}</div>
+        <div class="qrtz-table-desc" style="font-family:monospace; font-size:10px; color:#666;">${t.cols}</div>`;
+    if (S.expandedTable === t.name) {
+      html += renderTableRows(t.name);
+    }
+    html += `</div></div>`;
+  }
+  el.innerHTML = html;
+}
+
+function renderTableRows(name) {
+  if (name === 'QRTZ_FIRED_TRIGGERS') {
+    if (S.qrtzRows.fired.length === 0) return '<div style="font-size:11px; color:#555; padding:10px; text-align:center;">no rows — no jobs currently executing</div>';
+    let h = '';
+    for (const r of S.qrtzRows.fired) {
+      h += `<div class="qrtz-row fresh"><span class="col">ENTRY_ID</span>=<span class="val">${r.entryId.slice(0, 30)}</span> <span class="col">JOB</span>=<span class="val">${r.jobName}</span> <span class="col">INSTANCE</span>=<span class="val">${r.instanceName}</span> <span class="col">STATE</span>=<span class="val">${r.state}</span></div>`;
+    }
+    return h;
+  }
+  if (name === 'QRTZ_SCHEDULER_STATE') {
+    if (S.qrtzRows.schedState.length === 0) return '<div style="font-size:11px; color:#555; padding:10px; text-align:center;">no instances heartbeating yet</div>';
+    let h = '';
+    const now = Date.now();
+    for (const r of S.qrtzRows.schedState) {
+      const stale = (now - r.lastCheckin) > S.checkinInterval * 2;
+      h += `<div class="qrtz-row ${stale ? 'locked' : ''}"><span class="col">INSTANCE</span>=<span class="val ${stale ? 'stale' : ''}">${r.instanceName}</span> <span class="col">LAST_CHECKIN</span>=<span class="val ${stale ? 'stale' : ''}">${fmtTime(r.lastCheckin)} (${Math.round((now - r.lastCheckin) / 100) / 10}s ago)</span></div>`;
+    }
+    return h;
+  }
+  if (name === 'QRTZ_LOCKS') {
+    const locks = ['TRIGGER_ACCESS', 'STATE_ACCESS', 'JOB_ACCESS', 'CALENDAR_ACCESS', 'MISFIRE_ACCESS'];
+    let h = '';
+    for (const l of locks) {
+      h += `<div class="qrtz-row"><span class="col">LOCK_NAME</span>=<span class="val">${l}</span> <span style="color:#666;">— managed by SELECT FOR UPDATE</span></div>`;
+    }
+    return h;
+  }
+  if (name === 'QRTZ_TRIGGERS') {
+    return `<div class="qrtz-row"><span class="col">TRIGGER_NAME</span>=<span class="val">trigger.BillingJob</span> <span class="col">NEXT_FIRE</span>=<span class="val">${S.nextFireAt ? fmtTime(S.nextFireAt) : '—'}</span> <span class="col">STATE</span>=<span class="val">WAITING</span></div>`;
+  }
+  if (name === 'QRTZ_JOB_DETAILS') {
+    return `<div class="qrtz-row"><span class="col">JOB_NAME</span>=<span class="val">BillingJob</span> <span class="col">JOB_CLASS</span>=<span class="val">com.example.BillingJob</span> <span class="col">REQUESTS_RECOVERY</span>=<span class="val">${S.requestsRecovery}</span></div>`;
+  }
+  if (name === 'QRTZ_CRON_TRIGGERS') {
+    return `<div class="qrtz-row"><span class="col">TRIGGER_NAME</span>=<span class="val">trigger.BillingJob</span> <span class="col">CRON_EXPRESSION</span>=<span class="val">${S.cron}</span> <span class="col">TZ</span>=<span class="val">UTC</span></div>`;
+  }
+  return '<div style="font-size:11px; color:#555; padding:10px; text-align:center;">— empty (or not used in this scenario) —</div>';
+}
+
+function toggleTable(name) {
+  S.expandedTable = S.expandedTable === name ? null : name;
+  renderTables();
+}
+
+// =================== SECTION 4: MISFIRE TIMELINE ===================
+function renderTimeline() {
+  const interval = parseInt(document.getElementById('iTlInterval').value);
+  const downtime = parseInt(document.getElementById('iTlDowntime').value);
+  const policy = document.getElementById('iMisfire').value;
+  document.getElementById('vTlInterval').textContent = interval + ' min';
+  document.getElementById('vTlDowntime').textContent = downtime + ' min';
+
+  // Window: 2 hours total. Downtime starts at minute 25.
+  const windowMin = 120;
+  const downtimeStart = 25;
+  const downtimeEnd = downtimeStart + downtime;
+
+  // Build scheduled fires
+  const fires = [];
+  for (let m = 0; m <= windowMin; m += interval) fires.push({ time: m, scheduled: true, executed: false, skipped: false, replayed: false });
+
+  // Determine which fires fall in downtime
+  for (const f of fires) {
+    if (f.time >= downtimeStart && f.time < downtimeEnd) f.inDowntime = true;
+  }
+
+  const missed = fires.filter(f => f.inDowntime);
+  const beforeDown = fires.filter(f => f.time < downtimeStart);
+  const afterDown = fires.filter(f => f.time >= downtimeEnd);
+
+  // Apply policy
+  for (const f of beforeDown) f.executed = true;
+
+  if (policy === 'fireOnce' || policy === 'smart') {
+    if (missed.length > 0 && afterDown.length > 0) {
+      // Single replay at downtimeEnd
+      missed.forEach((f, i) => { if (i === 0) { f.replayed = true; f.replayTime = downtimeEnd; } else f.skipped = true; });
+      afterDown.forEach(f => f.executed = true);
+    } else {
+      missed.forEach(f => f.skipped = true);
+      afterDown.forEach(f => f.executed = true);
+    }
+  } else if (policy === 'doNothing') {
+    missed.forEach(f => f.skipped = true);
+    afterDown.forEach(f => f.executed = true);
+  } else if (policy === 'ignore') {
+    // Fire all missed back-to-back at downtimeEnd
+    missed.forEach((f, i) => { f.replayed = true; f.replayTime = downtimeEnd + i * 0.5; });
+    afterDown.forEach(f => f.executed = true);
+  }
+
+  // Render
+  const tl = document.getElementById('timeline');
+  let html = '<div class="tl-axis">';
+  // Downtime band
+  const dtLeftPct = (downtimeStart / windowMin) * 100;
+  const dtWidthPct = ((downtimeEnd - downtimeStart) / windowMin) * 100;
+  html += `<div class="tl-downtime" style="left:${dtLeftPct}%; width:${dtWidthPct}%;"><div class="tl-downtime-label">scheduler down (${downtime}m)</div></div>`;
+  // Tick marks every 15 min
+  for (let m = 0; m <= windowMin; m += 15) {
+    html += `<div class="tl-tick" style="left:${(m / windowMin) * 100}%;">${m}m</div>`;
+  }
+  // Fires
+  for (const f of fires) {
+    let cls = 'scheduled';
+    if (f.executed) cls = 'executed';
+    else if (f.skipped) cls = 'skipped';
+    else if (f.replayed) cls = 'replayed';
+    const x = (f.time / windowMin) * 100;
+    html += `<div class="tl-fire ${cls}" style="left:${x}%;" title="${f.time}m"></div>`;
+    html += `<div class="tl-fire-label" style="left:${x}%;">${f.time}m</div>`;
+  }
+  // Replayed fires (shown on top of original)
+  for (const f of fires) {
+    if (f.replayed && f.replayTime !== undefined) {
+      const x = (f.replayTime / windowMin) * 100;
+      html += `<div class="tl-fire replayed" style="left:${x}%; top:8px;" title="replay of ${f.time}m"></div>`;
+    }
+  }
+  html += '</div>';
+  tl.innerHTML = html;
+
+  // Stats
+  const scheduled = fires.length;
+  const executed = fires.filter(f => f.executed).length + fires.filter(f => f.replayed).length;
+  const skipped = fires.filter(f => f.skipped).length;
+  document.getElementById('outScheduled').textContent = scheduled;
+  document.getElementById('outExecuted').textContent = executed;
+  document.getElementById('outSkipped').textContent = skipped;
+
+  // Explanation
+  const explanations = {
+    smart: '<strong>smartPolicy</strong> — Quartz picks based on trigger type. For CronTrigger, this behaves like FIRE_ONCE_NOW: a single catch-up execution, the rest of the missed fires are merged into it.',
+    fireOnce: '<strong>FIRE_ONCE_NOW</strong> — When the scheduler comes back, fire <em>once</em> immediately for the missed window, then resume the normal schedule. ' + missed.length + ' missed fires → ' + (missed.length > 0 ? '1 replay' : '0') + ' execution.',
+    doNothing: '<strong>DO_NOTHING</strong> — Discard all missed fires. The scheduler waits for the next scheduled time and continues. Use when missed work is no longer relevant (e.g. periodic stats).',
+    ignore: '<strong>IGNORE_MISFIRE_POLICY</strong> — Fire <em>all</em> missed executions back-to-back when the scheduler returns. ⚠ Dangerous for high-frequency jobs — can cause a thundering herd.',
+  };
+  document.getElementById('misfireExplain').innerHTML = explanations[policy];
+}
+
+// =================== SECTION 6: HEALTH CHECK ===================
+function renderHealth() {
+  S.schedulerStarted = document.getElementById('iSchedStarted').checked;
+  S.dbUp = document.getElementById('iDbUp').checked;
+  S.threadPool = document.getElementById('iThreadPool').checked;
+  S.diskOk = document.getElementById('iDiskOk').checked;
+
+  const components = {
+    db: { up: S.dbUp, detail: { database: 'PostgreSQL', validationQuery: S.dbUp ? 'isValid()' : 'connection refused' }},
+    diskSpace: { up: S.diskOk, detail: { total: 250000000000, free: S.diskOk ? 80000000000 : 50000000, threshold: 10485760 }},
+    quartz: { up: S.schedulerStarted && S.dbUp && !S.threadPool, detail: {
+      scheduler: S.schedulerStarted ? 'STARTED' : 'NOT_STARTED',
+      threadPool: S.threadPool ? 'EXHAUSTED (10/10 active)' : 'OK (1/10 active)',
+      jobStore: S.dbUp ? 'JobStoreCMT (clustered)' : 'DOWN',
+    }},
+    livenessState: { up: true, detail: { status: 'CORRECT' }},
+    readinessState: { up: S.schedulerStarted && S.dbUp, detail: { status: (S.schedulerStarted && S.dbUp) ? 'ACCEPTING_TRAFFIC' : 'REFUSING_TRAFFIC' }},
+  };
+
+  const overallUp = Object.values(components).every(c => c.up);
+
+  let json = `{\n  <span class="h-key">"status"</span>: <span class="${overallUp ? 'h-up' : 'h-down'}">"${overallUp ? 'UP' : 'DOWN'}"</span>,\n  <span class="h-key">"components"</span>: {\n`;
+  const keys = Object.keys(components);
+  keys.forEach((k, i) => {
+    const c = components[k];
+    json += `    <span class="h-key">"${k}"</span>: {\n      <span class="h-key">"status"</span>: <span class="${c.up ? 'h-up' : 'h-down'}">"${c.up ? 'UP' : 'DOWN'}"</span>,\n      <span class="h-key">"details"</span>: {\n`;
+    const dkeys = Object.keys(c.detail);
+    dkeys.forEach((dk, di) => {
+      const dv = c.detail[dk];
+      const isNum = typeof dv === 'number';
+      json += `        <span class="h-key">"${dk}"</span>: <span class="${isNum ? 'h-num' : 'h-str'}">${isNum ? dv : '"' + dv + '"'}</span>${di < dkeys.length - 1 ? ',' : ''}\n`;
+    });
+    json += `      }\n    }${i < keys.length - 1 ? ',' : ''}\n`;
+  });
+  json += `  }\n}`;
+
+  document.getElementById('healthJson').innerHTML = json;
+
+  // Probes
+  const ready = S.schedulerStarted && S.dbUp;
+  document.getElementById('probeReadiness').className = 'health-probe ' + (ready ? 'ready' : 'notready');
+  document.getElementById('probeReadiness').innerHTML = `<span class="probe-icon">${ready ? '✓' : '✗'}</span> <strong>Readiness probe:</strong> ${ready ? 'PASS — pod accepts traffic' : 'FAIL — pod removed from Service endpoints'}`;
+  document.getElementById('probeLiveness').className = 'health-probe ready';
+  document.getElementById('probeLiveness').innerHTML = `<span class="probe-icon">✓</span> <strong>Liveness probe:</strong> PASS — pod kept alive (don't tie this to DB)`;
+
+  // kubectl
+  const kStatus = ready ? '1/1     Running' : '0/1     Running';
+  const kReady = ready ? 'True' : 'False';
+  document.getElementById('kubectlOutput').innerHTML =
+    `<span style="color:#888;">$</span> kubectl get pods -l app=quartz-app\n` +
+    `NAME                       READY   STATUS    RESTARTS   AGE\n` +
+    S.pods.slice(0, 3).map(p => `${p.id.padEnd(26)} <span class="${ready ? 'h-up' : 'h-down'}">${kStatus}</span>   0          12m`).join('\n') +
+    `\n\n<span style="color:#888;">$</span> kubectl get pods -o jsonpath='{.items[*].status.conditions}'\n` +
+    `<span class="h-key">type=Ready</span> <span class="h-key">status</span>=<span class="${ready ? 'h-up' : 'h-down'}">${kReady}</span>` +
+    (!ready ? `\n<span class="h-down">  → Endpoints controller removed pod from Service</span>\n<span class="h-down">  → Traffic redirected to other healthy pods</span>` : '');
+}
+
+// =================== PRESETS ===================
+function preset(name) {
+  if (name === 'reset' || name === 'happy') {
+    S.cron = '0/10 * * * * ?';
+    S.podCount = 3;
+    S.requestsRecovery = true;
+    S.checkinInterval = 7500;
+    document.getElementById('iCron').value = S.cron;
+    document.getElementById('iPodCount').value = 3;
+    document.getElementById('iRecovery').checked = true;
+    document.getElementById('iCheckin').value = 7.5;
+    document.getElementById('vCheckin').textContent = '7.5s';
+    document.getElementById('vPods').textContent = '3';
+    document.getElementById('iSchedStarted').checked = true;
+    document.getElementById('iDbUp').checked = true;
+    document.getElementById('iThreadPool').checked = false;
+    document.getElementById('iDiskOk').checked = true;
+  } else if (name === 'crash') {
+    preset('reset');
+    setTimeout(() => {
+      toggleSim();
+      setTimeout(() => {
+        const busy = S.pods.find(p => p.state === 'busy');
+        if (busy) killPod(busy.id);
+      }, 12000);
+    }, 200);
+    return;
+  } else if (name === 'downtime') {
+    document.getElementById('iTlInterval').value = 10;
+    document.getElementById('iTlDowntime').value = 35;
+    document.getElementById('iMisfire').value = 'fireOnce';
+  } else if (name === 'cliff') {
+    S.podCount = 8;
+    document.getElementById('iPodCount').value = 8;
+    document.getElementById('vPods').textContent = '8';
+  }
+  validateCron();
+  initPods();
+  S.qrtzRows = { fired: [], schedState: [], locks: [] };
+  for (const p of S.pods) S.qrtzRows.schedState.push({ instanceName: p.instanceId, lastCheckin: Date.now(), checkinInterval: S.checkinInterval });
+  S.totalFires = 0;
+  document.getElementById('rbTotalFires').textContent = '0';
+  renderPods();
+  renderTables();
+  renderTimeline();
+  renderHealth();
+  updateNextFires();
+}
+
+// =================== INPUT WIRING ===================
+function wireInputs() {
+  document.getElementById('iCron').addEventListener('input', () => { validateCron(); updateNextFires(); });
+  document.getElementById('iPodCount').addEventListener('input', e => {
+    S.podCount = parseInt(e.target.value);
+    document.getElementById('vPods').textContent = S.podCount;
+    initPods();
+    S.qrtzRows.schedState = S.pods.map(p => ({ instanceName: p.instanceId, lastCheckin: Date.now(), checkinInterval: S.checkinInterval }));
+    renderPods();
+    renderTables();
+  });
+  document.getElementById('iSpeed').addEventListener('input', e => {
+    S.speed = parseFloat(e.target.value);
+    document.getElementById('vSpeed').textContent = S.speed + '×';
+  });
+  document.getElementById('iRecovery').addEventListener('change', e => { S.requestsRecovery = e.target.checked; });
+  document.getElementById('iCheckin').addEventListener('input', e => {
+    S.checkinInterval = parseFloat(e.target.value) * 1000;
+    document.getElementById('vCheckin').textContent = parseFloat(e.target.value) + 's';
+  });
+
+  ['iTlInterval', 'iTlDowntime', 'iMisfire'].forEach(id =>
+    document.getElementById(id).addEventListener('input', renderTimeline));
+
+  ['iSchedStarted', 'iDbUp', 'iThreadPool', 'iDiskOk'].forEach(id =>
+    document.getElementById(id).addEventListener('change', renderHealth));
+}
+
+// =================== INIT ===================
+wireInputs();
+preset('reset');
+</script>
+
+<script src="cookie-consent.js"></script>
+</body>
+</html>

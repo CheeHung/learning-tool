@@ -108,6 +108,9 @@ header p {
 .card-irsa::before { background: linear-gradient(90deg, #a78bfa, #48dbfb); }
 .card-irsa:hover { border-color: #a78bfa; }
 
+.card-quartz::before { background: linear-gradient(90deg, #00bfa5, #6db33f); }
+.card-quartz:hover { border-color: #00bfa5; }
+
 .card-icon {
   font-size: 2.4rem;
   margin-bottom: 16px;
@@ -228,6 +231,19 @@ footer {
       <span class="tag">DNS</span>
       <span class="tag">EKS</span>
       <span class="tag">CoreDNS</span>
+    </div>
+  </a>
+
+  <a href="quartz-cluster-explainer.html" class="card card-quartz">
+    <span class="card-arrow">&rarr;</span>
+    <span class="card-icon">⏰</span>
+    <h2>Quartz Cluster on Spring Boot</h2>
+    <p>How multiple pods coordinate to run a scheduled job exactly once. Lock race, all 11 QRTZ tables, misfire policies, failover, and Actuator health checks.</p>
+    <div class="card-tags">
+      <span class="tag">Quartz</span>
+      <span class="tag">Spring Boot</span>
+      <span class="tag">Cron</span>
+      <span class="tag">Cluster</span>
     </div>
   </a>
 
