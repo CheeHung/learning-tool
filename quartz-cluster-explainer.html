@@ -350,40 +350,6 @@ label { font-size: 11px; color: #aaa; }
   <!-- Job lifecycle DB writes -->
   <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin:16px 0 8px;">What Quartz writes to the DB at each stage of a job's life</div>
   <div style="display:flex;gap:0;overflow-x:auto;padding-bottom:6px;" id="lifecycleFlow"></div>
-
-  <!-- Job status section -->
-  <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin:16px 0 8px;">Is there a job "status"? — what Quartz tracks vs what you must build yourself</div>
-  <div class="grid2">
-    <div>
-      <div style="font-size:11px;color:#6db33f;font-weight:700;margin-bottom:6px;">✅ Quartz tracks natively</div>
-      <div class="lr-state-panel" id="statusNative"></div>
-    </div>
-    <div>
-      <div style="font-size:11px;color:#ff4c4c;font-weight:700;margin-bottom:6px;">❌ Quartz does NOT track — build it yourself</div>
-      <div class="warn-box" style="margin-bottom:10px;">Once a job finishes (success <em>or</em> exception), its <code>QRTZ_FIRED_TRIGGERS</code> row is <strong>deleted</strong>. There is no built-in history table, no success/fail flag, no duration column.</div>
-      <div class="lr-state-panel">
-        <div style="color:#888;font-size:11px;margin-bottom:8px;">Add a <code style="color:#ffb74d;">JobListener</code> to write your own history:</div>
-        <div style="font-family:monospace;font-size:10px;line-height:1.7;color:#c8d0e0;">
-          <span style="color:#c084fc;">jobWasExecuted</span>(ctx, ex) {<br>
-          &nbsp;&nbsp;<span style="color:#888;">// fires after EVERY execution</span><br>
-          &nbsp;&nbsp;repo.save(JobRun {<br>
-          &nbsp;&nbsp;&nbsp;&nbsp;jobName: ctx.jobDetail.key,<br>
-          &nbsp;&nbsp;&nbsp;&nbsp;firedAt: ctx.fireTime,<br>
-          &nbsp;&nbsp;&nbsp;&nbsp;duration: ctx.jobRunTime, <span style="color:#888;">// ms</span><br>
-          &nbsp;&nbsp;&nbsp;&nbsp;status: ex == null ? <span style="color:#6db33f;">SUCCESS</span> : <span style="color:#ff4c4c;">FAILED</span>,<br>
-          &nbsp;&nbsp;&nbsp;&nbsp;error: ex?.message,<br>
-          &nbsp;&nbsp;&nbsp;&nbsp;recovering: ctx.recovering<br>
-          &nbsp;&nbsp;})<br>
-          }
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Trigger states clickable -->
-  <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 8px;">QRTZ_TRIGGERS.TRIGGER_STATE — all possible values <span style="color:#555;font-style:italic;text-transform:none;">(click to see when it applies)</span></div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;" id="triggerStates"></div>
-  <div id="triggerStateDetail" class="info-box" style="display:none;margin-top:10px;"></div>
 </div>
 
 <!-- =================== SECTION 4: MISFIRE =================== -->
@@ -1258,67 +1224,6 @@ function renderLifecycleFlow() {
   ).join('');
 }
 
-// =================== JOB STATUS PANEL ===================
-function renderJobStatus() {
-  // Native tracking
-  const native = [
-    { col: '#48dbfb', label: 'TRIGGER_STATE',    val: 'WAITING / ACQUIRED / BLOCKED / PAUSED / COMPLETE / ERROR', note: 'Current state only — no history' },
-    { col: '#6db33f', label: 'PREV_FIRE_TIME',   val: 'Timestamp of last trigger fire',                           note: 'QRTZ_TRIGGERS column' },
-    { col: '#6db33f', label: 'TIMES_TRIGGERED',  val: 'Total fire count since job was scheduled',                 note: 'QRTZ_TRIGGERS column' },
-    { col: '#ffb74d', label: 'QRTZ_FIRED_TRIGGERS', val: 'Row exists only while job is EXECUTING',               note: 'Deleted on completion' },
-    { col: '#a78bfa', label: 'ctx.isRecovering()', val: 'true inside a recovery run',                            note: 'JobExecutionContext API' },
-  ];
-  const el = document.getElementById('statusNative');
-  if (!el) return;
-  el.innerHTML = native.map(r =>
-    `<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:7px;font-size:11px;line-height:1.5;">
-      <span style="min-width:8px;height:8px;border-radius:50%;background:${r.col};flex-shrink:0;margin-top:3px;display:inline-block;"></span>
-      <div><span style="color:${r.col};font-family:monospace;font-weight:700;">${r.label}</span>
-      <br><span style="color:#c8d0e0;">${r.val}</span>
-      <br><span style="color:#555;font-size:10px;">${r.note}</span></div>
-    </div>`
-  ).join('');
-
-  // Trigger state pills
-  const STATES = {
-    WAITING:  { col: '#48dbfb', detail: 'Normal idle state. The trigger is scheduled and waiting for its NEXT_FIRE_TIME to arrive. All healthy triggers spend most of their life here.' },
-    ACQUIRED: { col: '#6db33f', detail: 'A scheduler node has claimed this trigger (SELECT FOR UPDATE on QRTZ_LOCKS). It is about to start executing. This state is transient — lasts milliseconds.' },
-    EXECUTING:{ col: '#00bfa5', detail: 'The job is currently running. The trigger stays in this state for the full duration of the job. A row also exists in QRTZ_FIRED_TRIGGERS.' },
-    BLOCKED:  { col: '#ffb74d', detail: '@DisallowConcurrentExecution is on, and a job instance is still running. The trigger cannot fire again until the current execution finishes and it reverts to WAITING.' },
-    PAUSED:   { col: '#a78bfa', detail: 'Manually paused via scheduler.pauseTrigger() or pauseJob(). It will not fire until resumed. The trigger group may also be paused via QRTZ_PAUSED_TRIGGER_GRPS.' },
-    COMPLETE: { col: '#555',    detail: 'The trigger has exhausted all its fires (e.g. a SimpleTrigger with repeatCount=3 that has fired 3 times). It will never fire again and can be cleaned up.' },
-    ERROR:    { col: '#ff4c4c', detail: 'Something went wrong retrieving or evaluating the trigger. Quartz sets this state when a trigger throws an unexpected exception. Requires manual inspection and reset.' },
-  };
-  const statesEl = document.getElementById('triggerStates');
-  if (!statesEl) return;
-  statesEl.innerHTML = Object.entries(STATES).map(([k, v]) =>
-    `<div onclick="showTriggerState('${k}')" style="padding:5px 12px;border-radius:20px;background:${v.col}22;border:1px solid ${v.col};color:${v.col};font-size:11px;font-weight:700;cursor:pointer;font-family:monospace;transition:all 0.15s;" onmouseover="this.style.background='${v.col}44'" onmouseout="this.style.background='${v.col}22'">${k}</div>`
-  ).join('');
-}
-
-const TRIGGER_STATE_DETAILS = {
-  WAITING:  { col: '#48dbfb', detail: 'Normal idle state. The trigger is scheduled and waiting for its NEXT_FIRE_TIME to arrive. All healthy triggers spend most of their life here.' },
-  ACQUIRED: { col: '#6db33f', detail: 'A scheduler node has claimed this trigger (SELECT FOR UPDATE on QRTZ_LOCKS). It is about to start executing. This state is transient — lasts milliseconds.' },
-  EXECUTING:{ col: '#00bfa5', detail: 'The job is currently running. The trigger stays in this state for the full duration of the job. A row also exists in QRTZ_FIRED_TRIGGERS.' },
-  BLOCKED:  { col: '#ffb74d', detail: '@DisallowConcurrentExecution is on, and a job instance is still running. The trigger cannot fire again until the current execution finishes and it reverts to WAITING.' },
-  PAUSED:   { col: '#a78bfa', detail: 'Manually paused via scheduler.pauseTrigger() or pauseJob(). It will not fire until resumed. The trigger group may also be paused via QRTZ_PAUSED_TRIGGER_GRPS.' },
-  COMPLETE: { col: '#555',    detail: 'The trigger has exhausted all its fires (e.g. a SimpleTrigger with repeatCount=3 that has fired 3 times). It will never fire again and can be cleaned up.' },
-  ERROR:    { col: '#ff4c4c', detail: 'Something went wrong retrieving or evaluating the trigger. Quartz sets this state when a trigger throws an unexpected exception. Requires manual inspection and reset.' },
-};
-
-function showTriggerState(key) {
-  const box = document.getElementById('triggerStateDetail');
-  if (box.dataset.key === key && box.style.display !== 'none') {
-    box.style.display = 'none'; box.dataset.key = ''; return;
-  }
-  const s = TRIGGER_STATE_DETAILS[key];
-  box.style.display = 'block';
-  box.dataset.key = key;
-  box.style.borderColor = s.col;
-  box.style.background = s.col + '11';
-  box.innerHTML = `<strong style="color:${s.col};font-family:monospace;">${key}</strong> — ${s.detail}`;
-}
-
 // =================== SECTION 3: QRTZ TABLES ===================
 const QRTZ_TABLES = [
   { name: 'QRTZ_JOB_DETAILS', desc: 'Job class names, durability, requestsRecovery flag, JobDataMap', cols: 'JOB_NAME · JOB_GROUP · JOB_CLASS_NAME · IS_DURABLE · REQUESTS_RECOVERY' },
@@ -1918,7 +1823,6 @@ renderLrSection();
 renderLrRecovery();
 setLrRecovery(true);
 renderLifecycleFlow();
-renderJobStatus();
 </script>
 
 <script src="cookie-consent.js"></script>
