@@ -304,8 +304,8 @@ label { font-size: 11px; color: #aaa; }
       <input type="range" id="iPodCount" min="2" max="8" step="1" value="3">
     </div>
     <div class="ctrl">
-      <label>Sim speed: <span class="vv" id="vSpeed">5×</span></label>
-      <input type="range" id="iSpeed" min="0.5" max="20" step="0.5" value="5">
+      <label>Sim speed: <span class="vv" id="vSpeed">1×</span></label>
+      <input type="range" id="iSpeed" min="0.5" max="20" step="0.5" value="1">
     </div>
     <button class="btn-primary" id="btnSimStart" onclick="toggleSim()">▶ Start</button>
     <button class="btn-blue" onclick="fireNow()">⚡ Fire now</button>
@@ -697,7 +697,7 @@ const S = {
   podCount: 3,
   pods: [],
   running: false,
-  speed: 5,
+  speed: 1,
   simNow: Date.now(),
   simStart: Date.now(),
   realNow: performance.now(),
@@ -1741,13 +1741,13 @@ function preset(name) {
   if (name === 'reset' || name === 'happy') {
     S.cron = '0/10 * * * * ?';
     S.podCount = 3;
-    S.speed = 5;
+    S.speed = 1;
     S.requestsRecovery = true;
     S.checkinInterval = 7500;
     document.getElementById('iCron').value = S.cron;
     document.getElementById('iPodCount').value = 3;
-    document.getElementById('iSpeed').value = 5;
-    document.getElementById('vSpeed').textContent = '5×';
+    document.getElementById('iSpeed').value = 1;
+    document.getElementById('vSpeed').textContent = '1×';
     document.getElementById('iRecovery').checked = true;
     document.getElementById('iCheckin').value = 7.5;
     document.getElementById('vCheckin').textContent = '7.5s';
