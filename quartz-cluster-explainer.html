@@ -193,6 +193,30 @@ label { font-size: 11px; color: #aaa; }
 .info-box strong { color: #00bfa5; }
 .challenge-box { background: #1a1f3a; border: 1px solid #00bfa5; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; font-size: 12px; color: #c0e8e2; line-height: 1.6; }
 .challenge-box strong { color: #00bfa5; }
+
+/* long-running jobs */
+.lr-controls { display: flex; gap: 14px; align-items: flex-end; padding: 12px; background: #0d1b2a; border: 1px solid #2a3a5e; border-radius: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.lr-canvas { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 12px 14px 8px; overflow-x: auto; }
+.lr-tick-axis { position: relative; height: 18px; margin-left: 50px; margin-bottom: 6px; }
+.lr-tick { position: absolute; top: 0; border-left: 1px solid #2a3a5e; font-size: 9px; color: #555; padding-left: 3px; white-space: nowrap; }
+.lr-track { position: relative; height: 28px; margin-bottom: 4px; }
+.lr-track-label { position: absolute; left: 0; top: 50%; transform: translateY(-50%); font-size: 10px; color: #555; width: 46px; text-align: right; padding-right: 6px; font-family: monospace; }
+.lr-track-area { position: absolute; left: 50px; right: 0; top: 0; bottom: 0; background: #111; border-radius: 4px; overflow: hidden; }
+.lr-job-bar { position: absolute; top: 3px; bottom: 3px; border-radius: 3px; display: flex; align-items: center; justify-content: center; overflow: hidden; min-width: 2px; }
+.lr-job-bar .bar-label { font-size: 9px; font-weight: 700; white-space: nowrap; padding: 0 3px; }
+.lr-fire-mark { position: absolute; top: 0; bottom: 0; width: 1px; background: #ff4c4c44; }
+.lr-state-panel { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 12px; font-size: 11px; font-family: monospace; line-height: 1.7; }
+.lr-state-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 11px; }
+.lr-state-badge { padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.lrs-waiting  { background: #1a2a4a; color: #48dbfb; }
+.lrs-acquired { background: #0a2a1a; color: #6db33f; }
+.lrs-blocked  { background: #2a1f0a; color: #ffb74d; }
+.lrs-active   { box-shadow: 0 0 0 2px currentColor; }
+.lr-thread-bar { height: 18px; background: #111; border: 1px solid #2a3a5e; border-radius: 4px; overflow: hidden; margin-top: 5px; }
+.lr-thread-fill { height: 100%; border-radius: 4px; transition: width 0.4s, background 0.4s; }
+.lr-legend { display: flex; gap: 12px; flex-wrap: wrap; padding: 8px; background: #111; border-radius: 4px; font-size: 10px; margin-top: 8px; }
+.lr-legend .li { display: flex; align-items: center; gap: 5px; color: #888; }
+.lr-legend .ls { width: 10px; height: 10px; border-radius: 2px; }
 </style>
 </head>
 <body>
@@ -422,6 +446,79 @@ label { font-size: 11px; color: #aaa; }
       </div>
     </div>
   </div>
+</div>
+
+<!-- =================== SECTION 7: LONG-RUNNING JOBS =================== -->
+<div class="section">
+  <div class="section-title">7. Long-running jobs — when job duration &gt; trigger interval <span class="badge">interactive</span></div>
+  <div class="section-sub">
+    Drag the sliders to set how long your job takes and how often it triggers. Without <code style="color:#ffb74d;">@DisallowConcurrentExecution</code>, each trigger fires a <em>new</em> job instance even if the last one is still running — threads pile up until the pool is exhausted. Flip the annotation on and see the difference.
+  </div>
+
+  <div class="lr-controls">
+    <div class="ctrl">
+      <label>Job duration: <span class="vv" id="vLrDuration">45s</span></label>
+      <input type="range" id="iLrDuration" min="5" max="120" value="45" step="5">
+    </div>
+    <div class="ctrl">
+      <label>Trigger every: <span class="vv" id="vLrInterval">20s</span></label>
+      <input type="range" id="iLrInterval" min="5" max="60" value="20" step="5">
+    </div>
+    <div class="toggle-group" style="justify-content:center;">
+      <label style="font-size:12px;color:#eee;"><input type="checkbox" id="iLrDCE" checked> <code style="color:#6db33f;">@DisallowConcurrentExecution</code></label>
+      <span style="font-size:10px;color:#555;">Uncheck → multiple instances run at once</span>
+    </div>
+    <div class="ctrl" id="iLrMisfireWrap">
+      <label>Misfire policy (when DCE on &amp; job overruns):</label>
+      <select id="iLrMisfire">
+        <option value="fireOnce">FIRE_ONCE_NOW — catch up with one replay</option>
+        <option value="doNothing">DO_NOTHING — skip overrun fires silently</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Execution timeline — first 5 minutes</div>
+      <div class="lr-canvas" id="lrCanvas"></div>
+      <div class="lr-legend">
+        <div class="li"><div class="ls" style="background:#00bfa5;"></div> Normal execution</div>
+        <div class="li"><div class="ls" style="background:#ffb74d;"></div> Delayed (missed trigger)</div>
+        <div class="li"><div class="ls" style="background:#ff4c4c44;border:1px solid #ff4c4c;"></div> Scheduled trigger fire</div>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">QRTZ_TRIGGERS — trigger state</div>
+      <div class="lr-state-panel" id="lrStatePanel"></div>
+
+      <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin:12px 0 6px;">Thread pool (max 10 threads)</div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#888;font-family:monospace;">
+        <span id="lrThreadLabel">1 thread in use</span>
+        <span id="lrThreadStatus" style="font-weight:700;"></span>
+      </div>
+      <div class="lr-thread-bar"><div class="lr-thread-fill" id="lrThreadFill"></div></div>
+
+      <div id="lrWarnBox" style="margin-top:12px;"></div>
+      <div id="lrInfoBox" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <div class="info-box" style="margin-top:14px;">
+    <strong>Mid-job pod death:</strong> If a pod dies while running a long job, <code>requestsRecovery=true</code> causes the cluster to re-fire the job on a healthy pod. Your job <em>must be idempotent</em> — it may have already done half the work. Design for "at-least-once" execution, not "exactly-once".
+  </div>
+
+  <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px;">Java annotation — where it goes on your job class</div>
+  <div class="ap-code">
+<span class="ann">@DisallowConcurrentExecution</span>   <span class="cm">// no two instances run at the same time — cluster-wide</span>
+<span class="ann">@PersistJobDataAfterExecution</span>   <span class="cm">// saves JobDataMap changes; pair with @DisallowConcurrentExecution</span>
+<span class="kw">public class</span> ReportJob <span class="kw">implements</span> Job {
+
+    <span class="ann">@Override</span>
+    <span class="kw">public void</span> execute(JobExecutionContext ctx) <span class="kw">throws</span> JobExecutionException {
+        <span class="cm">// heavy work — minutes long</span>
+        <span class="cm">// Safe: no other instance runs until this returns</span>
+    }
+}</div>
 </div>
 
 <!-- =================== REFERENCE =================== -->
@@ -1219,6 +1316,150 @@ function renderHealth() {
     (!ready ? `\n<span class="h-down">  → Endpoints controller removed pod from Service</span>\n<span class="h-down">  → Traffic redirected to other healthy pods</span>` : '');
 }
 
+// =================== SECTION 7: LONG-RUNNING JOBS ===================
+function renderLrSection() {
+  const duration = parseInt(document.getElementById('iLrDuration').value);
+  const interval = parseInt(document.getElementById('iLrInterval').value);
+  const dce = document.getElementById('iLrDCE').checked;
+  const misfire = document.getElementById('iLrMisfire').value;
+
+  document.getElementById('vLrDuration').textContent = duration + 's';
+  document.getElementById('vLrInterval').textContent = interval + 's';
+  document.getElementById('iLrMisfireWrap').style.opacity = dce ? '1' : '0.3';
+
+  const windowSec = 300;
+
+  // Build jobs array
+  const jobs = [];
+  if (!dce) {
+    // New instance fires at every trigger time regardless
+    for (let t = 0; t < windowSec; t += interval) {
+      jobs.push({ start: t, end: t + duration, lane: -1, delayed: false, missed: 0 });
+    }
+    // Assign lanes (greedy bin-packing)
+    const laneEnd = [];
+    for (const job of jobs) {
+      let placed = false;
+      for (let i = 0; i < laneEnd.length; i++) {
+        if (laneEnd[i] <= job.start) { job.lane = i; laneEnd[i] = job.end; placed = true; break; }
+      }
+      if (!placed) { job.lane = laneEnd.length; laneEnd.push(job.end); }
+    }
+  } else {
+    // Serialised: next job can only start after previous finishes
+    let prevEnd = 0;
+    let nextScheduled = 0;
+    while (nextScheduled < windowSec) {
+      const start = Math.max(prevEnd, nextScheduled);
+      if (start > windowSec) break;
+      const end = start + duration;
+      const delayed = start > nextScheduled + 0.5;
+      let missedCount = 0;
+      // Advance scheduled pointer past job end
+      let ns = nextScheduled + interval;
+      while (ns < end) { ns += interval; missedCount++; }
+      jobs.push({ start, end, lane: 0, delayed, missed: missedCount });
+      prevEnd = end;
+      nextScheduled = ns;
+    }
+  }
+
+  const maxLane = dce ? 1 : (jobs.length > 0 ? Math.max(...jobs.map(j => j.lane)) + 1 : 1);
+  const peakThreads = dce ? 1 : maxLane;
+
+  // Render canvas
+  const canvas = document.getElementById('lrCanvas');
+  let html = '';
+
+  // Tick axis
+  html += '<div class="lr-tick-axis">';
+  for (let t = 0; t <= windowSec; t += 30) {
+    const pct = (t / windowSec) * 100;
+    html += `<div class="lr-tick" style="left:${pct}%">${t}s</div>`;
+  }
+  html += '</div>';
+
+  // Scheduled trigger marks (lane 0 background)
+  const triggersHtml = [];
+  for (let t = 0; t < windowSec; t += interval) {
+    const pct = (t / windowSec) * 100;
+    triggersHtml.push(`<div class="lr-fire-mark" style="left:${pct}%"></div>`);
+  }
+
+  // Job bars per lane
+  for (let lane = 0; lane < maxLane; lane++) {
+    const laneJobs = jobs.filter(j => j.lane === lane);
+    html += `<div class="lr-track"><div class="lr-track-label">T${lane + 1}</div><div class="lr-track-area">`;
+    if (lane === 0) html += triggersHtml.join('');
+    for (const job of laneJobs) {
+      const x = Math.max(0, (job.start / windowSec) * 100);
+      const rawW = ((Math.min(job.end, windowSec) - job.start) / windowSec) * 100;
+      const w = Math.max(0.3, rawW);
+      const col = job.delayed ? '#ffb74d' : '#00bfa5';
+      const label = job.end > windowSec ? '…' : (job.end - job.start) + 's';
+      html += `<div class="lr-job-bar" style="left:${x}%;width:${w}%;background:${col}22;border:1px solid ${col};color:${col};">`
+            + `<span class="bar-label">${label}</span></div>`;
+    }
+    html += '</div></div>';
+  }
+
+  canvas.innerHTML = html;
+
+  // State panel
+  const panel = document.getElementById('lrStatePanel');
+  const states = [
+    { key: 'WAITING',  cls: 'lrs-waiting',  desc: 'Idle — ready for next fire',      active: false },
+    { key: 'ACQUIRED', cls: 'lrs-acquired', desc: 'Lock taken, job about to execute', active: !dce },
+    { key: 'BLOCKED',  cls: 'lrs-blocked',  desc: '@DCE on — job running, trigger frozen', active: dce },
+  ];
+  panel.innerHTML = '<div style="color:#888;margin-bottom:8px;font-size:11px;">Current active state while job executes:</div>'
+    + states.map(s => {
+      const isActive = s.active;
+      return `<div class="lr-state-row">
+        <span class="lr-state-badge ${s.cls}${isActive ? ' lrs-active' : ''}">${s.key}</span>
+        <span style="color:${isActive ? '#eee' : '#555'}">${s.desc}${isActive ? ' ◀' : ''}</span>
+      </div>`;
+    }).join('')
+    + `<div style="margin-top:10px;color:#888;font-size:11px;line-height:1.6;">
+        ${dce
+          ? `When the job finishes, BLOCKED → WAITING.<br>If next_fire_time is already past → <strong style="color:#ffb74d;">misfire applies (${misfire === 'fireOnce' ? 'FIRE_ONCE_NOW' : 'DO_NOTHING'})</strong>.`
+          : `No blocking — each trigger creates a new job instance on a new thread.`
+        }
+      </div>`;
+
+  // Thread gauge
+  const pct = Math.min((peakThreads / 10) * 100, 100);
+  const overloaded = peakThreads > 10;
+  const nearLimit = peakThreads >= 8 && peakThreads <= 10;
+  const fillColor = overloaded ? '#ff4c4c' : nearLimit ? '#ffb74d' : '#6db33f';
+  document.getElementById('lrThreadLabel').textContent = `Peak: ${peakThreads} thread${peakThreads !== 1 ? 's' : ''} in use`;
+  document.getElementById('lrThreadFill').style.width = pct + '%';
+  document.getElementById('lrThreadFill').style.background = fillColor;
+  document.getElementById('lrThreadStatus').textContent = overloaded ? '⚠ EXHAUSTED' : nearLimit ? '⚠ Near limit' : 'OK';
+  document.getElementById('lrThreadStatus').style.color = fillColor;
+
+  // Warning / info boxes
+  const warnBox = document.getElementById('lrWarnBox');
+  const infoBox = document.getElementById('lrInfoBox');
+
+  if (!dce && peakThreads > 10) {
+    warnBox.innerHTML = `<div class="warn-box"><strong>⚠ Thread pool exhausted!</strong> ${peakThreads} concurrent instances needed but pool only has 10. New triggers can't start — they immediately misfire. The backlog grows unboundedly until you restart the scheduler.</div>`;
+  } else if (!dce && duration > interval) {
+    warnBox.innerHTML = `<div class="warn-box"><strong>⚠ Jobs piling up.</strong> Job takes ${duration}s but fires every ${interval}s. At steady state, ${peakThreads} instances run in parallel — eating ${peakThreads} threads permanently. Add <code>@DisallowConcurrentExecution</code> to serialise them.</div>`;
+  } else {
+    warnBox.innerHTML = '';
+  }
+
+  if (dce) {
+    const executions = jobs.length;
+    const scheduled = Math.floor(windowSec / interval);
+    const skipped = scheduled - executions;
+    infoBox.innerHTML = `<div class="info-box"><strong>With @DisallowConcurrentExecution:</strong> ${executions} actual executions vs ${scheduled} scheduled fires over 5 min. ${skipped > 0 ? `${skipped} trigger fire${skipped > 1 ? 's' : ''} were delayed/skipped.` : 'No fires skipped — job fits within the interval.'} Always 1 thread in use.</div>`;
+  } else {
+    infoBox.innerHTML = '';
+  }
+}
+
 // =================== PRESETS ===================
 function preset(name) {
   if (name === 'reset' || name === 'happy') {
@@ -1294,11 +1535,16 @@ function wireInputs() {
 
   ['iSchedStarted', 'iDbUp', 'iThreadPool', 'iDiskOk'].forEach(id =>
     document.getElementById(id).addEventListener('change', renderHealth));
+
+  ['iLrDuration', 'iLrInterval', 'iLrMisfire'].forEach(id =>
+    document.getElementById(id).addEventListener('input', renderLrSection));
+  document.getElementById('iLrDCE').addEventListener('change', renderLrSection);
 }
 
 // =================== INIT ===================
 wireInputs();
 preset('reset');
+renderLrSection();
 </script>
 
 <script src="cookie-consent.js"></script>
