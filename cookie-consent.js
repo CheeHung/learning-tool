@@ -64,7 +64,7 @@
     const s = document.createElement('script');
     s.setAttribute('data-cc-ads', '1');
     s.async = true;
-    s.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX';
+    s.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4966180722844808';
     s.crossOrigin = 'anonymous';
     document.head.appendChild(s);
   }
