@@ -1143,9 +1143,7 @@ function simTick(t) {
   }
 
   tickPods();
-  const elapsed = S.simNow - S.simStart;
-  const em = Math.floor(elapsed / 60000), es = Math.floor((elapsed % 60000) / 1000);
-  document.getElementById('rbSimTime').textContent = `${String(em).padStart(2,'0')}:${String(es).padStart(2,'0')}`;
+  document.getElementById('rbSimTime').textContent = fmtTimeShort(S.simNow);
   document.getElementById('rbNextFire').textContent = S.nextFireAt ? fmtTimeShort(S.nextFireAt) : '—';
   requestAnimationFrame(simTick);
 }
