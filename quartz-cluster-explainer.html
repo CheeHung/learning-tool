@@ -217,6 +217,26 @@ label { font-size: 11px; color: #aaa; }
 .lr-legend { display: flex; gap: 12px; flex-wrap: wrap; padding: 8px; background: #111; border-radius: 4px; font-size: 10px; margin-top: 8px; }
 .lr-legend .li { display: flex; align-items: center; gap: 5px; color: #888; }
 .lr-legend .ls { width: 10px; height: 10px; border-radius: 2px; }
+
+/* job lifecycle flow */
+.lc-step { background: #0d1b2a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 10px 12px; min-width: 180px; flex-shrink: 0; position: relative; }
+.lc-step:not(:last-child)::after { content: '→'; position: absolute; right: -14px; top: 50%; transform: translateY(-50%); color: #2a3a5e; font-size: 18px; font-weight: 700; z-index: 1; }
+.lc-step-title { font-size: 11px; font-weight: 700; color: #00bfa5; margin-bottom: 6px; }
+.lc-step-writes { font-size: 10px; font-family: monospace; line-height: 1.7; }
+.lc-write { display: flex; gap: 6px; }
+.lc-write .op { color: #ffb74d; font-weight: 700; }
+.lc-write .tbl { color: #48dbfb; }
+.lc-write .detail { color: #555; }
+.lc-arrow { display: flex; align-items: center; padding: 0 6px; color: #2a3a5e; font-size: 20px; font-weight: 700; flex-shrink: 0; }
+
+/* mid-job pod death */
+.lr-event { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; font-size: 12px; line-height: 1.6; position: relative; }
+.lr-event::before { content: ''; position: absolute; left: -16px; top: 6px; bottom: -10px; width: 1px; background: #2a3a5e; }
+.lr-event:last-child::before { display: none; }
+.lr-event .ev-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; position: absolute; left: -20px; }
+.lr-event .ev-time { font-family: monospace; color: #00bfa5; font-weight: 700; white-space: nowrap; min-width: 70px; }
+.lr-event .ev-body { color: #c8d0e0; }
+.lr-event .ev-body .dim { color: #555; font-size: 11px; }
 </style>
 </head>
 <body>
@@ -326,6 +346,10 @@ label { font-size: 11px; color: #aaa; }
   </div>
 
   <div class="tables-grid" id="tablesGrid"></div>
+
+  <!-- Job lifecycle DB writes -->
+  <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin:16px 0 8px;">What Quartz writes to the DB at each stage of a job's life</div>
+  <div style="display:flex;gap:0;overflow-x:auto;padding-bottom:6px;" id="lifecycleFlow"></div>
 </div>
 
 <!-- =================== SECTION 4: MISFIRE =================== -->
@@ -503,20 +527,78 @@ label { font-size: 11px; color: #aaa; }
     </div>
   </div>
 
-  <div class="info-box" style="margin-top:14px;">
-    <strong>Mid-job pod death:</strong> If a pod dies while running a long job, <code>requestsRecovery=true</code> causes the cluster to re-fire the job on a healthy pod. Your job <em>must be idempotent</em> — it may have already done half the work. Design for "at-least-once" execution, not "exactly-once".
+  <!-- Mid-job pod death panel -->
+  <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin:18px 0 8px;">What happens when the pod dies mid-job?</div>
+  <div class="panel">
+
+    <!-- Recovery latency calculator -->
+    <div class="grid2" style="margin-bottom:16px;">
+      <div>
+        <div style="font-size:11px;color:#888;margin-bottom:8px;">Quartz only detects a dead pod when another pod notices its <code style="color:#ffb74d;">QRTZ_SCHEDULER_STATE</code> row has gone stale — it does not use OS signals or Kubernetes events.</div>
+        <div class="lr-controls" style="margin-bottom:0;flex-direction:column;gap:8px;">
+          <div class="ctrl">
+            <label>Checkin interval: <span class="vv" id="vLrCheckin">7.5s</span></label>
+            <input type="range" id="iLrCheckin" min="2" max="60" value="7.5" step="0.5">
+          </div>
+          <div class="ctrl">
+            <label>Job was <span class="vv" id="vLrJobPct">40</span>% through when pod died:</label>
+            <input type="range" id="iLrJobPct" min="5" max="95" value="40" step="5">
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:#888;margin-bottom:8px;">Recovery timeline</div>
+        <div class="lr-state-panel" id="lrRecoveryTimeline"></div>
+      </div>
+    </div>
+
+    <!-- Event sequence -->
+    <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Event sequence</div>
+    <div id="lrEventSeq" style="position:relative;padding-left:24px;"></div>
+
+    <!-- requestsRecovery toggle -->
+    <div style="display:flex;gap:10px;margin:14px 0 8px;flex-wrap:wrap;align-items:center;">
+      <span style="font-size:12px;color:#aaa;">JobDetail.requestsRecovery:</span>
+      <button class="btn-green" onclick="setLrRecovery(true)"  id="lrBtnRecTrue">✅ true</button>
+      <button class="btn-reset" onclick="setLrRecovery(false)" id="lrBtnRecFalse">❌ false</button>
+    </div>
+    <div id="lrRecoveryOutcome" class="info-box" style="margin-bottom:0;"></div>
   </div>
 
-  <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px;">Java annotation — where it goes on your job class</div>
+  <!-- Design patterns -->
+  <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin:16px 0 8px;">Design patterns for at-least-once jobs</div>
+  <div class="grid3">
+    <div class="panel" style="cursor:pointer;" onclick="showLrPattern('idempotent')">
+      <div style="font-size:18px;margin-bottom:6px;">🔁</div>
+      <div style="font-size:13px;font-weight:700;color:#00bfa5;margin-bottom:4px;">Idempotent job</div>
+      <div style="font-size:11px;color:#888;line-height:1.6;">Check before you act. Guard every side-effect with a "already done?" query.</div>
+    </div>
+    <div class="panel" style="cursor:pointer;" onclick="showLrPattern('checkpoint')">
+      <div style="font-size:18px;margin-bottom:6px;">💾</div>
+      <div style="font-size:13px;font-weight:700;color:#00bfa5;margin-bottom:4px;">Checkpointing</div>
+      <div style="font-size:11px;color:#888;line-height:1.6;">Save progress into JobDataMap or a DB table. On recovery, skip already-done work.</div>
+    </div>
+    <div class="panel" style="cursor:pointer;" onclick="showLrPattern('isrecovering')">
+      <div style="font-size:18px;margin-bottom:6px;">🔍</div>
+      <div style="font-size:13px;font-weight:700;color:#00bfa5;margin-bottom:4px;">ctx.isRecovering()</div>
+      <div style="font-size:11px;color:#888;line-height:1.6;">Quartz tells you this is a recovery run. Take a different code path for cleanup.</div>
+    </div>
+  </div>
+  <div id="lrPatternCode" class="ap-code" style="display:none;margin-top:10px;"></div>
+
+  <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin:16px 0 6px;">Java annotations</div>
   <div class="ap-code">
-<span class="ann">@DisallowConcurrentExecution</span>   <span class="cm">// no two instances run at the same time — cluster-wide</span>
-<span class="ann">@PersistJobDataAfterExecution</span>   <span class="cm">// saves JobDataMap changes; pair with @DisallowConcurrentExecution</span>
+<span class="ann">@DisallowConcurrentExecution</span>   <span class="cm">// cluster-wide: no two instances run at once</span>
+<span class="ann">@PersistJobDataAfterExecution</span>   <span class="cm">// saves JobDataMap changes — required for checkpointing</span>
 <span class="kw">public class</span> ReportJob <span class="kw">implements</span> Job {
 
     <span class="ann">@Override</span>
     <span class="kw">public void</span> execute(JobExecutionContext ctx) <span class="kw">throws</span> JobExecutionException {
-        <span class="cm">// heavy work — minutes long</span>
-        <span class="cm">// Safe: no other instance runs until this returns</span>
+        <span class="kw">if</span> (ctx.isRecovering()) {
+            <span class="cm">// pod died last time — decide: restart from scratch or resume from checkpoint</span>
+            log.warn(<span class="str">"Recovery run detected — last execution was interrupted"</span>);
+        }
+        <span class="cm">// ... job work ...</span>
     }
 }</div>
 </div>
@@ -1083,6 +1165,65 @@ function resetSim() {
   renderTables();
 }
 
+// =================== JOB LIFECYCLE FLOW ===================
+function renderLifecycleFlow() {
+  const steps = [
+    {
+      title: '① Scheduler startup',
+      writes: [
+        { op: 'INSERT', tbl: 'QRTZ_JOB_DETAILS', detail: 'job class, requestsRecovery' },
+        { op: 'INSERT', tbl: 'QRTZ_TRIGGERS',    detail: 'NEXT_FIRE_TIME, state=WAITING' },
+        { op: 'INSERT', tbl: 'QRTZ_CRON_TRIGGERS', detail: 'cron expression' },
+        { op: 'INSERT', tbl: 'QRTZ_SCHEDULER_STATE', detail: 'instanceId, checkinInterval' },
+      ]
+    },
+    {
+      title: '② Lock race (trigger fires)',
+      writes: [
+        { op: 'SELECT FOR UPDATE', tbl: 'QRTZ_LOCKS', detail: 'TRIGGER_ACCESS row' },
+        { op: 'UPDATE', tbl: 'QRTZ_TRIGGERS', detail: 'state → ACQUIRED, NEXT_FIRE_TIME advances' },
+        { op: 'INSERT', tbl: 'QRTZ_FIRED_TRIGGERS', detail: 'instanceId, firedTime, state=EXECUTING' },
+      ]
+    },
+    {
+      title: '③ Job executing',
+      writes: [
+        { op: '(lock released)', tbl: 'QRTZ_LOCKS', detail: 'other pods can acquire next trigger' },
+        { op: 'HEARTBEAT', tbl: 'QRTZ_SCHEDULER_STATE', detail: 'UPDATE LAST_CHECKIN_TIME every checkinInterval' },
+        { op: '⏳ row exists', tbl: 'QRTZ_FIRED_TRIGGERS', detail: 'stays until job finishes' },
+      ]
+    },
+    {
+      title: '④ Job completes ✅',
+      writes: [
+        { op: 'DELETE', tbl: 'QRTZ_FIRED_TRIGGERS', detail: 'execution row removed' },
+        { op: 'UPDATE', tbl: 'QRTZ_TRIGGERS', detail: 'state → WAITING, PREV_FIRE_TIME set, TIMES_TRIGGERED++' },
+        { op: 'UPDATE*', tbl: 'QRTZ_JOB_DETAILS', detail: '*only if @PersistJobDataAfterExecution' },
+      ]
+    },
+    {
+      title: '⑤ Pod dies mid-job 💀',
+      writes: [
+        { op: '(no writes)', tbl: 'QRTZ_FIRED_TRIGGERS', detail: 'row stays — orphaned' },
+        { op: 'DELETE (stale)', tbl: 'QRTZ_SCHEDULER_STATE', detail: 'after 2× checkinInterval' },
+        { op: 'DELETE', tbl: 'QRTZ_FIRED_TRIGGERS', detail: 'orphan cleared by healthy pod' },
+        { op: 'INSERT*', tbl: 'QRTZ_TRIGGERS', detail: '*recovery trigger if requestsRecovery=true' },
+      ]
+    },
+  ];
+
+  const el = document.getElementById('lifecycleFlow');
+  el.innerHTML = steps.map((s, i) =>
+    `${i > 0 ? '<div class="lc-arrow">→</div>' : ''}
+    <div class="lc-step">
+      <div class="lc-step-title">${s.title}</div>
+      <div class="lc-step-writes">
+        ${s.writes.map(w => `<div class="lc-write"><span class="op">${w.op}</span><span class="tbl">${w.tbl}</span></div><div style="color:#555;font-size:9px;padding-left:6px;margin-bottom:3px;">${w.detail}</div>`).join('')}
+      </div>
+    </div>`
+  ).join('');
+}
+
 // =================== SECTION 3: QRTZ TABLES ===================
 const QRTZ_TABLES = [
   { name: 'QRTZ_JOB_DETAILS', desc: 'Job class names, durability, requestsRecovery flag, JobDataMap', cols: 'JOB_NAME · JOB_GROUP · JOB_CLASS_NAME · IS_DURABLE · REQUESTS_RECOVERY' },
@@ -1460,6 +1601,137 @@ function renderLrSection() {
   }
 }
 
+// =================== SECTION 7b: MID-JOB POD DEATH ===================
+let lrRecovery = true;
+
+function setLrRecovery(val) {
+  lrRecovery = val;
+  document.getElementById('lrBtnRecTrue').className  = val ? 'btn-green' : 'btn-reset';
+  document.getElementById('lrBtnRecFalse').className = val ? 'btn-reset' : 'btn-danger';
+  renderLrRecovery();
+}
+
+function renderLrRecovery() {
+  const checkin = parseFloat(document.getElementById('iLrCheckin').value);
+  const pct = parseInt(document.getElementById('iLrJobPct').value);
+  const detectionSec = checkin * 2;
+
+  document.getElementById('vLrCheckin').textContent = checkin + 's';
+  document.getElementById('vLrJobPct').textContent = pct;
+
+  // Timeline rows
+  const tl = document.getElementById('lrRecoveryTimeline');
+  const rows = [
+    { label: 't = 0', col: '#ff4c4c', text: `Pod OOMKilled / SIGKILL — process gone. ${pct}% of job completed.` },
+    { label: `t + ${checkin}s`, col: '#ffb74d', text: `Healthy pods miss first heartbeat from dead pod. No action yet.` },
+    { label: `t + ${detectionSec}s`, col: '#ffb74d', text: `QRTZ_SCHEDULER_STATE row marked stale (last_checkin + 2× interval passed).` },
+    { label: `t + ${detectionSec}s`, col: lrRecovery ? '#00bfa5' : '#888', text: lrRecovery
+        ? `requestsRecovery=true → orphaned QRTZ_FIRED_TRIGGERS row claimed, recovery trigger created.`
+        : `requestsRecovery=false → orphaned row deleted. Job execution is <strong style="color:#ff4c4c;">dropped silently.</strong>` },
+    { label: `t + ${(detectionSec + 1).toFixed(1)}s`, col: lrRecovery ? '#6db33f' : '#555', text: lrRecovery
+        ? `Recovery job fires on a healthy pod. ctx.isRecovering() == <strong style="color:#6db33f;">true</strong>.`
+        : `Next scheduled trigger fires normally at its original NEXT_FIRE_TIME.` },
+  ];
+  tl.innerHTML = rows.map(r =>
+    `<div style="display:flex;gap:10px;margin-bottom:7px;font-size:11px;line-height:1.5;">
+      <span style="min-width:80px;font-family:monospace;color:${r.col};font-weight:700;white-space:nowrap;">${r.label}</span>
+      <span style="color:#c8d0e0;">${r.text}</span>
+    </div>`
+  ).join('');
+
+  // Event sequence
+  const seq = document.getElementById('lrEventSeq');
+  const events = [
+    { dot: '#ff4c4c', time: 't = 0', body: `<strong>Pod dies</strong> — JVM process killed. The ${pct}% of work done is <em>already committed to external systems</em> (DB writes, emails, API calls). Quartz has no idea.`, dim: `QRTZ_FIRED_TRIGGERS still has a row: instance_name=dead-pod, state=EXECUTING` },
+    { dot: '#ffb74d', time: `t + ${detectionSec}s`, body: `<strong>Stale heartbeat detected</strong> — a healthy pod's misfire scan finds the dead pod's QRTZ_SCHEDULER_STATE row. LAST_CHECKIN_TIME + ${detectionSec}s &lt; now.`, dim: `The dead pod's row is deleted from QRTZ_SCHEDULER_STATE` },
+    { dot: '#ffb74d', time: `t + ${detectionSec}s`, body: `<strong>Orphaned executions released</strong> — all QRTZ_FIRED_TRIGGERS rows owned by the dead pod are found.`, dim: lrRecovery ? 'requestsRecovery=true on the JobDetail → recovery trigger inserted' : 'requestsRecovery=false → rows deleted, work is lost' },
+    lrRecovery
+      ? { dot: '#6db33f', time: `t + ${(detectionSec + 1).toFixed(1)}s`, body: `<strong>Recovery job executes</strong> — a new job instance runs on a healthy pod. <code style="color:#6db33f;">ctx.isRecovering()</code> returns <strong style="color:#6db33f;">true</strong>. The ${pct}% already done will be <em>done again</em> unless the job is idempotent.`, dim: 'QRTZ_JOB_DATA_MAP from before the crash is available via ctx.getScheduledFireTime()' }
+      : { dot: '#555',   time: `t + next fire`, body: `<strong>Nothing happens until the next scheduled trigger fire.</strong> The ${pct}% work done is lost with no trace.`, dim: 'Set requestsRecovery=true on the JobDetail to change this' },
+  ];
+  seq.innerHTML = events.map(e =>
+    `<div class="lr-event">
+      <div class="ev-dot" style="background:${e.dot};"></div>
+      <span class="ev-time">${e.time}</span>
+      <div class="ev-body">${e.body}<br><span class="dim">${e.dim}</span></div>
+    </div>`
+  ).join('');
+
+  // Outcome box
+  const out = document.getElementById('lrRecoveryOutcome');
+  if (lrRecovery) {
+    out.className = 'info-box';
+    out.innerHTML = `<strong>At-least-once delivery.</strong> The job <em>will</em> re-run, but it has already done ${pct}% of its work. Unless your job is idempotent, those side-effects happen twice. Detection lag: <strong>${detectionSec}s</strong> (= 2 × ${checkin}s checkin interval).`;
+  } else {
+    out.className = 'warn-box';
+    out.innerHTML = `<strong>Work silently dropped.</strong> The ${pct}% of the job that ran is the only thing that happened. The remaining ${100 - pct}% never runs. No log, no alert. Set <code>requestsRecovery=true</code> to at least get a recovery attempt.`;
+  }
+}
+
+const LR_PATTERNS = {
+  idempotent: `<span class="ann">@DisallowConcurrentExecution</span>
+<span class="kw">public class</span> InvoiceJob <span class="kw">implements</span> Job {
+    <span class="kw">public void</span> execute(JobExecutionContext ctx) {
+        List&lt;Order&gt; pending = orderRepo.findByStatus(<span class="str">"PENDING"</span>);
+        <span class="cm">// ✅ Idempotent: only processes orders that are still PENDING.</span>
+        <span class="cm">//    If the job died after processing order #42, order #42</span>
+        <span class="cm">//    is now INVOICED — it won't be processed again.</span>
+        <span class="kw">for</span> (Order o : pending) {
+            invoiceService.issue(o);          <span class="cm">// marks order INVOICED atomically</span>
+        }
+    }
+}`,
+  checkpoint: `<span class="ann">@DisallowConcurrentExecution</span>
+<span class="ann">@PersistJobDataAfterExecution</span>     <span class="cm">// required — saves JobDataMap between runs</span>
+<span class="kw">public class</span> BulkExportJob <span class="kw">implements</span> Job {
+    <span class="kw">public void</span> execute(JobExecutionContext ctx) {
+        JobDataMap data = ctx.getJobDetail().getJobDataMap();
+        <span class="kw">long</span> lastId = data.getLong(<span class="str">"lastProcessedId"</span>);  <span class="cm">// 0 on first run</span>
+
+        List&lt;Row&gt; batch = repo.findByIdGreaterThan(lastId, PAGE_SIZE);
+        <span class="kw">while</span> (!batch.isEmpty()) {
+            processBatch(batch);
+            lastId = batch.get(batch.size() - 1).getId();
+            data.put(<span class="str">"lastProcessedId"</span>, lastId);   <span class="cm">// ← checkpoint</span>
+            <span class="cm">// @PersistJobDataAfterExecution saves this even if we crash here</span>
+            batch = repo.findByIdGreaterThan(lastId, PAGE_SIZE);
+        }
+        data.put(<span class="str">"lastProcessedId"</span>, 0L);  <span class="cm">// reset for next scheduled run</span>
+    }
+}`,
+  isrecovering: `<span class="ann">@DisallowConcurrentExecution</span>
+<span class="kw">public class</span> ReportJob <span class="kw">implements</span> Job {
+    <span class="kw">public void</span> execute(JobExecutionContext ctx) {
+        <span class="kw">if</span> (ctx.isRecovering()) {
+            <span class="cm">// Quartz confirms: this is a recovery run after a crash.</span>
+            <span class="cm">// ctx.getScheduledFireTime() = when the original fire was supposed to be.</span>
+            <span class="cm">// ctx.getFireTime()          = now (time of recovery fire).</span>
+            log.warn(<span class="str">"Recovery run: original fire was {}, elapsed={}s"</span>,
+                ctx.getScheduledFireTime(),
+                (ctx.getFireTime().getTime() - ctx.getScheduledFireTime().getTime()) / 1000);
+
+            <span class="cm">// Option A: skip — if the window is stale, don't re-report</span>
+            <span class="kw">if</span> (isWindowStale(ctx.getScheduledFireTime())) <span class="kw">return</span>;
+
+            <span class="cm">// Option B: resume from checkpoint in JobDataMap</span>
+            <span class="cm">// Option C: full re-run if the job is idempotent</span>
+        }
+        generateAndSendReport(ctx.getScheduledFireTime());
+    }
+}`,
+};
+
+function showLrPattern(key) {
+  const box = document.getElementById('lrPatternCode');
+  if (box.dataset.key === key && box.style.display !== 'none') {
+    box.style.display = 'none'; box.dataset.key = '';
+  } else {
+    box.innerHTML = LR_PATTERNS[key];
+    box.style.display = 'block';
+    box.dataset.key = key;
+  }
+}
+
 // =================== PRESETS ===================
 function preset(name) {
   if (name === 'reset' || name === 'happy') {
@@ -1539,12 +1811,18 @@ function wireInputs() {
   ['iLrDuration', 'iLrInterval', 'iLrMisfire'].forEach(id =>
     document.getElementById(id).addEventListener('input', renderLrSection));
   document.getElementById('iLrDCE').addEventListener('change', renderLrSection);
+
+  ['iLrCheckin', 'iLrJobPct'].forEach(id =>
+    document.getElementById(id).addEventListener('input', renderLrRecovery));
 }
 
 // =================== INIT ===================
 wireInputs();
 preset('reset');
 renderLrSection();
+renderLrRecovery();
+setLrRecovery(true);
+renderLifecycleFlow();
 </script>
 
 <script src="cookie-consent.js"></script>
