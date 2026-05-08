@@ -699,6 +699,7 @@ const S = {
   running: false,
   speed: 5,
   simNow: Date.now(),
+  simStart: Date.now(),
   realNow: performance.now(),
   nextFireAt: 0,
   totalFires: 0,
@@ -1142,7 +1143,9 @@ function simTick(t) {
   }
 
   tickPods();
-  document.getElementById('rbSimTime').textContent = fmtTimeShort(S.simNow);
+  const elapsed = S.simNow - S.simStart;
+  const em = Math.floor(elapsed / 60000), es = Math.floor((elapsed % 60000) / 1000);
+  document.getElementById('rbSimTime').textContent = `${String(em).padStart(2,'0')}:${String(es).padStart(2,'0')}`;
   document.getElementById('rbNextFire').textContent = S.nextFireAt ? fmtTimeShort(S.nextFireAt) : '—';
   requestAnimationFrame(simTick);
 }
@@ -1153,6 +1156,7 @@ function resetSim() {
   document.getElementById('btnSimStart').className = 'btn-primary';
   S.totalFires = 0;
   S.simNow = Date.now();
+  S.simStart = Date.now();
   S.nextFireAt = 0;
   initPods();
   S.qrtzRows = { fired: [], schedState: [], locks: [{ name: 'TRIGGER_ACCESS', heldBy: null }, { name: 'STATE_ACCESS', heldBy: null }] };
