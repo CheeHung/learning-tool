@@ -747,7 +747,8 @@ function parseCronField(field, min, max, names) {
   for (const part of parts) {
     let step = 1;
     let body = part;
-    if (part.includes('/')) {
+    const hasStep = part.includes('/');
+    if (hasStep) {
       const [b, s] = part.split('/');
       body = b;
       step = parseInt(s, 10);
@@ -759,7 +760,8 @@ function parseCronField(field, min, max, names) {
       const [a, b] = body.split('-').map(Number);
       lo = a; hi = b;
     } else {
-      lo = hi = parseInt(body, 10);
+      lo = parseInt(body, 10);
+      hi = hasStep ? max : lo;
     }
     for (let v = lo; v <= hi; v += step) out.add(v);
   }
