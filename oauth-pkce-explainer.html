@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>OAuth 2.0 + PKCE | Play to Learn</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Interactive walkthrough of OAuth 2.0 Authorization Code + PKCE. Watch the classic flow get exploited by an attacker, then watch PKCE shut the attack down. Includes JWT inspector, OIDC layer, and common pitfalls.">
+<meta name="keywords" content="oauth 2.0, pkce, authorization code flow, oidc, openid connect, jwt, id token, access token, code interception attack, code_verifier, code_challenge">
+<meta name="robots" content="index, follow">
+<meta property="og:type" content="website">
+<meta property="og:title" content="OAuth 2.0 + PKCE — Interactive Authorization Code Flow Explainer">
+<meta property="og:description" content="Animated step-by-step OAuth flow, attack simulator showing why PKCE exists, JWT claim inspector, OIDC layer.">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0c1221; color: #eee; min-height: 100vh; padding: 20px; }
+h1 { text-align: center; margin-bottom: 6px; color: #4fc3f7; }
+.subtitle { text-align: center; color: #888; margin-bottom: 22px; font-size: 14px; }
+a.back { color: #888; font-size: 12px; text-decoration: none; }
+a.back:hover { color: #4fc3f7; }
+.top-bar { display: flex; justify-content: space-between; align-items: center; max-width: 1400px; margin: 0 auto 14px; }
+
+.section { max-width: 1400px; margin: 0 auto 24px; }
+.section-title { font-size: 16px; font-weight: 700; color: #4fc3f7; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.section-title .badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: #0d2638; border: 1px solid #4fc3f7; color: #4fc3f7; font-weight: 600; }
+.section-sub { color: #888; font-size: 12px; margin-bottom: 14px; line-height: 1.6; }
+.panel { background: #14203a; border: 1px solid #2a3a5e; border-radius: 12px; padding: 16px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+@media (max-width: 900px) { .grid2, .grid3, .grid4 { grid-template-columns: 1fr; } }
+
+button { padding: 7px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.15s; font-family: inherit; }
+button:hover:not(:disabled) { transform: translateY(-1px); }
+button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.btn-primary { background: #4fc3f7; color: #0a1a28; }
+.btn-danger  { background: #ff4c4c; color: #fff; }
+.btn-warn    { background: #ffb74d; color: #1a1a2e; }
+.btn-green   { background: #6db33f; color: #1a1a2e; }
+.btn-reset   { background: #333; color: #aaa; border: 1px solid #555; }
+
+select, input[type=text] { background: #0d1b2a; color: #eee; border: 1px solid #2a3a5e; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-family: monospace; }
+
+/* actor cards */
+.actor-card { background: #14203a; border: 1px solid #2a3a5e; border-radius: 10px; padding: 14px; cursor: pointer; transition: all 0.15s; }
+.actor-card:hover { border-color: #4fc3f7; transform: translateY(-2px); }
+.actor-card .icon { font-size: 28px; margin-bottom: 8px; }
+.actor-card .name { font-size: 13px; font-weight: 700; color: #4fc3f7; margin-bottom: 4px; }
+.actor-card .sub { font-size: 10px; color: #888; font-family: monospace; margin-bottom: 6px; }
+.actor-card .desc { font-size: 11px; color: #c8d0e0; line-height: 1.5; }
+
+/* flow diagram */
+.flow-stage { background: #0d1b2a; border: 1px solid #2a3a5e; border-radius: 12px; padding: 16px; }
+.flow-actors { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 10px; background: #14203a; border-radius: 8px; margin-bottom: 14px; }
+.flow-actor { text-align: center; padding: 8px; border-radius: 6px; background: #0d1b2a; border: 1px solid #2a3a5e; transition: all 0.3s; }
+.flow-actor.active { border-color: #4fc3f7; background: #0d2638; box-shadow: 0 0 14px rgba(79, 195, 247, 0.4); }
+.flow-actor.attacker { border-color: #ff4c4c; background: #2a0a0a; }
+.flow-actor .a-icon { font-size: 22px; }
+.flow-actor .a-label { font-size: 10px; color: #888; margin-top: 4px; font-family: monospace; }
+.flow-actor.active .a-label { color: #4fc3f7; }
+
+.flow-step { background: #0d1b2a; border-left: 3px solid #2a3a5e; padding: 10px 14px; margin-bottom: 6px; border-radius: 4px; font-size: 12px; transition: all 0.3s; opacity: 0.4; }
+.flow-step.active { border-color: #4fc3f7; background: #0d2638; opacity: 1; box-shadow: 0 0 12px rgba(79, 195, 247, 0.2); }
+.flow-step.done { border-color: #6db33f; opacity: 0.8; }
+.flow-step.attack { border-color: #ff4c4c; background: #2a0a0a; opacity: 1; }
+.flow-step .step-num { color: #4fc3f7; font-weight: 700; font-family: monospace; margin-right: 8px; }
+.flow-step.attack .step-num { color: #ff4c4c; }
+.flow-step .step-title { font-weight: 600; color: #c8d0e0; }
+.flow-step .step-detail { font-size: 11px; color: #888; margin-top: 4px; line-height: 1.5; }
+
+.flow-controls { display: flex; gap: 8px; padding: 10px 12px; background: #0d1b2a; border: 1px solid #2a3a5e; border-radius: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+.flow-controls .step-counter { margin-left: auto; font-size: 11px; color: #888; font-family: monospace; }
+
+/* HTTP request box */
+.http-box { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 11px; line-height: 1.7; margin-top: 8px; overflow-x: auto; }
+.http-box .http-method { color: #ffb74d; font-weight: 700; }
+.http-box .http-url { color: #4fc3f7; }
+.http-box .http-header { color: #888; }
+.http-box .http-key { color: #c084ff; }
+.http-box .http-val { color: #6db33f; }
+.http-box .http-comment { color: #555; font-style: italic; }
+.http-box .http-redirect { color: #ff4c4c; font-weight: 700; }
+
+/* PKCE math */
+.pkce-math { background: #0a0a0a; border: 1px solid #4fc3f7; border-radius: 8px; padding: 14px; font-family: monospace; font-size: 12px; line-height: 1.8; }
+.pkce-math .var { color: #c084ff; }
+.pkce-math .op { color: #ffb74d; }
+.pkce-math .val { color: #6db33f; word-break: break-all; }
+.pkce-math .lbl { color: #888; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-top: 8px; margin-bottom: 2px; }
+
+/* JWT inspector */
+.jwt-input { width: 100%; background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 11px; color: #eee; word-break: break-all; line-height: 1.6; min-height: 64px; }
+.jwt-pieces { display: flex; flex-wrap: wrap; gap: 4px; padding: 10px; background: #0a0a0a; border-radius: 6px; font-family: monospace; font-size: 11px; word-break: break-all; line-height: 1.7; }
+.jwt-pieces .header  { color: #ff4c4c; }
+.jwt-pieces .payload { color: #c084ff; }
+.jwt-pieces .sig     { color: #6db33f; }
+.jwt-pieces .dot { color: #555; }
+.jwt-decoded { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 12px; }
+@media (max-width: 900px) { .jwt-decoded { grid-template-columns: 1fr; } }
+.jwt-card { background: #0a0a0a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 12px; font-family: monospace; font-size: 11px; line-height: 1.7; }
+.jwt-card.hdr { border-color: #ff4c4c; }
+.jwt-card.pld { border-color: #c084ff; }
+.jwt-card.sig { border-color: #6db33f; }
+.jwt-card .ttl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; margin-bottom: 8px; }
+.jwt-card.hdr .ttl { color: #ff4c4c; }
+.jwt-card.pld .ttl { color: #c084ff; }
+.jwt-card.sig .ttl { color: #6db33f; }
+.jwt-claim { display: flex; gap: 6px; margin-bottom: 4px; }
+.jwt-claim .k { color: #4fc3f7; }
+.jwt-claim .v { color: #c8d0e0; }
+.jwt-claim .desc { color: #555; font-size: 10px; font-style: italic; flex: 1; text-align: right; }
+
+/* attack simulator */
+.attack-sim { background: #0d1b2a; border: 1px solid #2a3a5e; border-radius: 12px; padding: 16px; }
+.attack-stage { padding: 10px 12px; background: #0a0a0a; border-radius: 6px; margin-bottom: 6px; font-size: 12px; line-height: 1.6; opacity: 0.4; transition: opacity 0.3s; }
+.attack-stage.active { opacity: 1; }
+.attack-stage.bad { color: #ff4c4c; }
+.attack-stage.good { color: #6db33f; }
+.attack-result { padding: 14px; border-radius: 8px; font-size: 13px; font-weight: 600; margin-top: 12px; text-align: center; }
+.attack-result.bad { background: #2a0a0a; border: 1px solid #ff4c4c; color: #ff4c4c; }
+.attack-result.good { background: #0a2a1a; border: 1px solid #6db33f; color: #6db33f; }
+
+/* boxes */
+.warn-box { background: #2d1010; border: 1px solid #ff4c4c; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #ffcccc; line-height: 1.6; margin-bottom: 12px; }
+.warn-box strong { color: #ff4c4c; }
+.info-box { background: #0d2638; border: 1px solid #4fc3f7; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #c0e0f0; line-height: 1.6; margin-bottom: 12px; }
+.info-box strong { color: #4fc3f7; }
+.good-box { background: #0a2a1a; border: 1px solid #6db33f; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #c0f0c8; line-height: 1.6; margin-bottom: 12px; }
+.good-box strong { color: #6db33f; }
+
+/* pitfalls */
+.pitfall { background: #14203a; border: 1px solid #2a3a5e; border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; transition: all 0.15s; }
+.pitfall:hover { border-color: #ff4c4c; }
+.pitfall .p-title { font-size: 13px; font-weight: 700; color: #ff4c4c; margin-bottom: 4px; }
+.pitfall .p-detail { font-size: 11px; color: #888; line-height: 1.6; display: none; }
+.pitfall.open .p-detail { display: block; margin-top: 8px; }
+.pitfall.open .p-title::before { content: '▼ '; }
+.pitfall .p-title::before { content: '▶ '; color: #555; }
+
+/* reference */
+.ref-section { max-width: 1400px; margin: 0 auto 24px; background: #0d1b2a; border-radius: 12px; padding: 16px; border: 1px solid #2a3a5e; }
+.ref-section h2 { color: #4fc3f7; font-size: 14px; margin-bottom: 10px; }
+.ref-section details { margin-bottom: 6px; padding: 8px 10px; background: #14203a; border-radius: 6px; border: 1px solid #2a3a5e; }
+.ref-section summary { cursor: pointer; font-size: 12px; color: #4fc3f7; font-weight: 600; }
+.ref-section details p, .ref-section details ul { color: #aaa; font-size: 12px; line-height: 1.7; margin-top: 8px; }
+.ref-section details ul { padding-left: 18px; }
+.ref-section code { background: #0a0a1a; padding: 1px 5px; border-radius: 3px; color: #ffb74d; font-size: 11px; font-family: monospace; }
+.ref-section a { color: #4fc3f7; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <a href="index.html" class="back">&larr; Back</a>
+</div>
+<h1>OAuth 2.0 Authorization Code + PKCE</h1>
+<p class="subtitle">From naked auth code &middot; the interception attack &middot; PKCE fix &middot; OIDC &middot; JWT inspector</p>
+
+<!-- =================== SECTION 1: ACTORS =================== -->
+<div class="section">
+  <div class="section-title">1. The four actors <span class="badge">click each</span></div>
+  <div class="section-sub">
+    OAuth lets a user grant a third-party app limited access to their data on another site &mdash; <strong>without sharing their password</strong>. There are always four parties involved.
+  </div>
+
+  <div class="grid4" id="actorsGrid"></div>
+
+  <div class="info-box" style="margin-top:14px;">
+    <strong>The problem OAuth solves:</strong> &ldquo;I want to let this photo printing app access my Google Photos &mdash; but I don&rsquo;t want to give them my Google password.&rdquo; OAuth replaces password sharing with delegated access tokens that are scoped, time-limited, and revocable.
+  </div>
+</div>
+
+<!-- =================== SECTION 2: AUTH CODE FLOW (NO PKCE) =================== -->
+<div class="section">
+  <div class="section-title">2. Authorization Code flow &mdash; <em>without</em> PKCE <span class="badge">step through</span></div>
+  <div class="section-sub">
+    The classic OAuth 2.0 flow as defined in RFC 6749 (2012). Click <strong>Next step</strong> to walk through it. The actor lighting up shows who is doing what.
+  </div>
+
+  <div class="flow-stage">
+    <div class="flow-actors" id="flow1Actors"></div>
+
+    <div class="flow-controls">
+      <button class="btn-primary" onclick="flow1Next()">Next step ▶</button>
+      <button class="btn-reset" onclick="flow1Reset()">↻ Reset</button>
+      <span class="step-counter">Step <span id="flow1Counter">0</span> of 8</span>
+    </div>
+
+    <div id="flow1Steps"></div>
+  </div>
+
+  <div class="warn-box" style="margin-top:14px;">
+    <strong>⚠ This flow has a critical weakness on mobile / SPA / native apps:</strong> the authorization code travels back through the user&rsquo;s browser/OS as a redirect. If a malicious app on the same device can intercept that redirect, it can steal the code &mdash; and (depending on the client type) exchange it for tokens. We&rsquo;ll demo that next.
+  </div>
+</div>
+
+<!-- =================== SECTION 3: THE ATTACK =================== -->
+<div class="section">
+  <div class="section-title">3. The authorization code interception attack <span class="badge">live demo</span></div>
+  <div class="section-sub">
+    Mobile apps register custom URL schemes like <code style="color:#ffb74d;">myapp://callback</code>. If a malicious app registers the <em>same</em> scheme, Android/iOS may dispatch the redirect to whichever app responds first. The attacker now has the authorization code.
+  </div>
+
+  <div class="grid2">
+    <div class="attack-sim">
+      <div style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">📱 The setup</div>
+      <div class="flow-actors" style="grid-template-columns:repeat(3,1fr);">
+        <div class="flow-actor"><div class="a-icon">📱</div><div class="a-label">Real App</div></div>
+        <div class="flow-actor attacker"><div class="a-icon">😈</div><div class="a-label">Malicious App</div></div>
+        <div class="flow-actor"><div class="a-icon">🏛️</div><div class="a-label">Auth Server</div></div>
+      </div>
+      <div style="font-size:11px;color:#888;line-height:1.6;margin-top:10px;">
+        Both apps installed on the same phone. Both registered <code style="color:#ffb74d;">myapp://callback</code> in their manifest. The auth server has no idea which one is legitimate.
+      </div>
+    </div>
+    <div class="attack-sim">
+      <div style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">🚨 The attack runs</div>
+      <div id="attackStages"></div>
+      <button class="btn-danger" id="runAttackBtn" onclick="runAttack()" style="margin-top:10px;width:100%;">▶ Run attack</button>
+      <div id="attackResult"></div>
+    </div>
+  </div>
+
+  <div class="warn-box" style="margin-top:14px;">
+    <strong>What about <code>client_secret</code>?</strong> Web servers protect the token exchange with a <code>client_secret</code> the attacker doesn&rsquo;t have. But mobile and SPA apps <em>cannot safely store secrets</em> &mdash; they ship in the app binary or browser. So those clients are <strong>public clients</strong> with no secret. The attacker just needs the authorization code.
+  </div>
+</div>
+
+<!-- =================== SECTION 4: PKCE INTRO =================== -->
+<div class="section">
+  <div class="section-title">4. PKCE &mdash; Proof Key for Code Exchange <span class="badge">RFC 7636</span></div>
+  <div class="section-sub">
+    PKCE (pronounced &ldquo;pixie&rdquo;) replaces the static <code style="color:#ffb74d;">client_secret</code> with a one-time secret that the legitimate client generates fresh for each authorization request. The attacker can&rsquo;t steal it because it never travels over the wire in plaintext.
+  </div>
+
+  <div class="grid2">
+    <div>
+      <div style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">The math</div>
+      <div class="pkce-math" id="pkceMath"></div>
+      <button class="btn-primary" onclick="regeneratePkce()" style="margin-top:8px;">↻ Generate new code_verifier</button>
+    </div>
+    <div>
+      <div style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Why this works</div>
+      <div class="info-box">
+        <strong>The legitimate app holds the only copy of <code>code_verifier</code>.</strong> It sends only the <em>hash</em> (<code>code_challenge</code>) to the authorization server in step 1. The verifier is sent in step 2 (token exchange) over a TLS-protected back-channel. An attacker who intercepts the authorization code has no way to compute the verifier from the hash &mdash; SHA-256 is one-way.
+      </div>
+      <div class="good-box">
+        <strong>What changed:</strong> the &ldquo;secret&rdquo; that proves identity is no longer something the client must store securely. It&rsquo;s generated fresh for each login, used once, and discarded.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- =================== SECTION 5: AUTH CODE + PKCE FLOW =================== -->
+<div class="section">
+  <div class="section-title">5. Authorization Code + PKCE flow <span class="badge">step through</span></div>
+  <div class="section-sub">
+    Same flow as Section 2, but the highlighted lines show the PKCE additions. Notice: only two extra parameters (<code style="color:#ffb74d;">code_challenge</code> and <code style="color:#ffb74d;">code_verifier</code>) and one verification step on the server.
+  </div>
+
+  <div class="flow-stage">
+    <div class="flow-actors" id="flow2Actors"></div>
+
+    <div class="flow-controls">
+      <button class="btn-primary" onclick="flow2Next()">Next step ▶</button>
+      <button class="btn-reset" onclick="flow2Reset()">↻ Reset</button>
+      <span class="step-counter">Step <span id="flow2Counter">0</span> of 10</span>
+    </div>
+
+    <div id="flow2Steps"></div>
+  </div>
+</div>
+
+<!-- =================== SECTION 6: ATTACK SIMULATOR (SIDE-BY-SIDE) =================== -->
+<div class="section">
+  <div class="section-title">6. Same attack against PKCE &mdash; what changes <span class="badge">side by side</span></div>
+  <div class="section-sub">
+    The malicious app does everything the same way. Click run and watch where it fails.
+  </div>
+
+  <div class="grid2">
+    <div class="attack-sim">
+      <div style="font-size:12px;color:#ff4c4c;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">❌ Without PKCE</div>
+      <div id="sim1Stages"></div>
+      <div id="sim1Result"></div>
+    </div>
+    <div class="attack-sim">
+      <div style="font-size:12px;color:#6db33f;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">✅ With PKCE</div>
+      <div id="sim2Stages"></div>
+      <div id="sim2Result"></div>
+    </div>
+  </div>
+
+  <div style="text-align:center;margin-top:14px;">
+    <button class="btn-primary" onclick="runSideBySide()" id="sideBySideBtn">▶ Run attack against both</button>
+    <button class="btn-reset" onclick="resetSideBySide()">↻ Reset</button>
+  </div>
+</div>
+
+<!-- =================== SECTION 7: OIDC =================== -->
+<div class="section">
+  <div class="section-title">7. OIDC layer &mdash; OAuth + identity <span class="badge">OpenID Connect</span></div>
+  <div class="section-sub">
+    OAuth 2.0 was designed for <em>authorization</em> (&ldquo;app X may read user&rsquo;s photos&rdquo;), not authentication (&ldquo;who is the user?&rdquo;). OpenID Connect adds an <strong>ID Token</strong> (a JWT) on top of OAuth to answer that question.
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <div style="font-size:13px;font-weight:700;color:#4fc3f7;margin-bottom:8px;">📜 Access Token</div>
+      <ul style="font-size:11px;color:#c8d0e0;line-height:1.8;padding-left:18px;">
+        <li><strong>Audience:</strong> the resource server (API)</li>
+        <li><strong>Format:</strong> opaque string OR JWT (provider-specific)</li>
+        <li><strong>Purpose:</strong> &ldquo;bearer of this token may call this API&rdquo;</li>
+        <li><strong>Don&rsquo;t:</strong> parse claims to identify the user. The audience isn&rsquo;t you.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <div style="font-size:13px;font-weight:700;color:#4fc3f7;margin-bottom:8px;">🪪 ID Token (OIDC only)</div>
+      <ul style="font-size:11px;color:#c8d0e0;line-height:1.8;padding-left:18px;">
+        <li><strong>Audience:</strong> the client app (you)</li>
+        <li><strong>Format:</strong> always a signed JWT</li>
+        <li><strong>Purpose:</strong> &ldquo;here is who the user is&rdquo;</li>
+        <li><strong>Verify:</strong> signature against JWKS, <code>iss</code>, <code>aud</code>, <code>exp</code>, <code>nonce</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 8px;">Discovery &mdash; how the client finds the auth server&rsquo;s endpoints</div>
+  <div class="http-box">
+<span class="http-method">GET</span> <span class="http-url">https://accounts.google.com/.well-known/openid-configuration</span>
+
+<span class="http-comment">// Returns one JSON document with everything the client needs:</span>
+{
+  <span class="http-key">"issuer"</span>: <span class="http-val">"https://accounts.google.com"</span>,
+  <span class="http-key">"authorization_endpoint"</span>: <span class="http-val">"https://accounts.google.com/o/oauth2/v2/auth"</span>,
+  <span class="http-key">"token_endpoint"</span>: <span class="http-val">"https://oauth2.googleapis.com/token"</span>,
+  <span class="http-key">"userinfo_endpoint"</span>: <span class="http-val">"https://openidconnect.googleapis.com/v1/userinfo"</span>,
+  <span class="http-key">"jwks_uri"</span>: <span class="http-val">"https://www.googleapis.com/oauth2/v3/certs"</span>,
+  <span class="http-key">"code_challenge_methods_supported"</span>: [<span class="http-val">"S256"</span>],
+  <span class="http-key">"id_token_signing_alg_values_supported"</span>: [<span class="http-val">"RS256"</span>]
+}
+  </div>
+  <div class="info-box" style="margin-top:8px;">
+    <strong>JWKS</strong> (<code>jwks_uri</code>) is the public-key endpoint. Your app fetches it once, caches the keys, and uses them to verify the ID Token signature. Keys rotate periodically &mdash; cache with a sensible TTL and refetch on signature failure.
+  </div>
+</div>
+
+<!-- =================== SECTION 8: JWT INSPECTOR =================== -->
+<div class="section">
+  <div class="section-title">8. JWT claim inspector <span class="badge">decode &amp; explore</span></div>
+  <div class="section-sub">
+    A JWT is three base64url segments joined by dots: <span style="color:#ff4c4c;">header</span>.<span style="color:#c084ff;">payload</span>.<span style="color:#6db33f;">signature</span>. The header and payload are <strong>not encrypted</strong> &mdash; they&rsquo;re just base64-encoded JSON. Anyone can read them. The signature is what makes the contents tamper-proof.
+  </div>
+
+  <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Sample ID Token (click any segment below to decode)</div>
+  <div class="jwt-pieces" id="jwtPieces"></div>
+
+  <div class="jwt-decoded" id="jwtDecoded"></div>
+
+  <div class="info-box" style="margin-top:14px;">
+    <strong>Verification checklist</strong> when your app receives an ID Token:
+    <ol style="margin-top:8px;padding-left:24px;line-height:1.8;">
+      <li>Signature valid against the public key from JWKS (matched by <code>kid</code> header)</li>
+      <li><code>iss</code> matches your expected issuer URL</li>
+      <li><code>aud</code> contains your <code>client_id</code></li>
+      <li><code>exp</code> is in the future, <code>iat</code> is reasonable (clock skew ±5 min)</li>
+      <li><code>nonce</code> matches the value you sent in the authorize request</li>
+      <li><code>at_hash</code> matches first half of SHA-256 of the access token (defends against token substitution)</li>
+    </ol>
+  </div>
+</div>
+
+<!-- =================== SECTION 9: PITFALLS =================== -->
+<div class="section">
+  <div class="section-title">9. Common pitfalls <span class="badge">click each</span></div>
+  <div class="section-sub">Things teams get wrong even with PKCE in place.</div>
+  <div id="pitfalls"></div>
+</div>
+
+<!-- =================== REFERENCE =================== -->
+<div class="ref-section">
+  <h2>Reference &mdash; specs &amp; further reading</h2>
+
+  <details>
+    <summary>RFCs &amp; specs</summary>
+    <ul>
+      <li><a href="https://datatracker.ietf.org/doc/html/rfc6749" target="_blank">RFC 6749</a> &mdash; OAuth 2.0 core framework</li>
+      <li><a href="https://datatracker.ietf.org/doc/html/rfc7636" target="_blank">RFC 7636</a> &mdash; PKCE</li>
+      <li><a href="https://datatracker.ietf.org/doc/html/rfc7519" target="_blank">RFC 7519</a> &mdash; JWT</li>
+      <li><a href="https://datatracker.ietf.org/doc/html/rfc8252" target="_blank">RFC 8252</a> &mdash; OAuth for native apps (mandates PKCE)</li>
+      <li><a href="https://datatracker.ietf.org/doc/html/draft-ietf-oauth-security-topics" target="_blank">OAuth 2.0 Security Best Current Practice</a> &mdash; the modern guidance</li>
+      <li><a href="https://openid.net/specs/openid-connect-core-1_0.html" target="_blank">OpenID Connect Core 1.0</a></li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>What replaced what</summary>
+    <ul>
+      <li><strong>Implicit flow (response_type=token)</strong> &mdash; deprecated. Tokens travelled in URL fragments and ended up in browser history / referer headers. Replaced by Auth Code + PKCE for SPAs.</li>
+      <li><strong>Resource Owner Password Credentials (ROPC)</strong> &mdash; deprecated. Defeats the entire point of OAuth (no password sharing). Replaced by Auth Code for first-party apps.</li>
+      <li><strong>client_secret in mobile apps</strong> &mdash; never safe. Apps are reverse-engineered. Use PKCE instead.</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>Library hints</summary>
+    <ul>
+      <li><strong>SPA:</strong> <code>oidc-client-ts</code>, Auth0 SPA SDK, <code>@azure/msal-browser</code></li>
+      <li><strong>Mobile:</strong> AppAuth (iOS/Android, Google-maintained), platform identity SDKs</li>
+      <li><strong>Spring Boot:</strong> <code>spring-boot-starter-oauth2-client</code> (handles PKCE automatically since 5.7)</li>
+      <li><strong>Node.js:</strong> <code>openid-client</code></li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>When does PKCE NOT replace client_secret?</summary>
+    <p>Confidential clients (server-side web apps where the secret stays on the server) should use <strong>both</strong> PKCE <strong>and</strong> <code>client_secret</code>. Defense in depth. The current OAuth security BCP recommends PKCE for all clients, public or confidential.</p>
+  </details>
+</div>
+
+<script>
+// =================== ACTORS ===================
+const ACTORS = [
+  { icon: '👤', name: 'Resource Owner', sub: 'the user',          desc: 'Owns the data. Decides whether to grant access. Logs in to the auth server with their real password.' },
+  { icon: '📱', name: 'Client',         sub: 'your app',           desc: 'The app that wants to read user data on the user&rsquo;s behalf. Mobile, SPA, or server-side. Never sees the user&rsquo;s password.' },
+  { icon: '🏛️', name: 'Authorization Server', sub: '/authorize, /token', desc: 'Authenticates the user. Issues authorization codes and access tokens. Examples: Google, Auth0, Keycloak, Okta.' },
+  { icon: '🗄️', name: 'Resource Server', sub: 'the API',           desc: 'Holds the data (photos, calendar, files). Validates access tokens on each request and serves matching scopes.' },
+];
+function renderActors() {
+  document.getElementById('actorsGrid').innerHTML = ACTORS.map(a =>
+    `<div class="actor-card">
+      <div class="icon">${a.icon}</div>
+      <div class="name">${a.name}</div>
+      <div class="sub">${a.sub}</div>
+      <div class="desc">${a.desc}</div>
+    </div>`
+  ).join('');
+}
+renderActors();
+
+// =================== FLOW 1: NO PKCE ===================
+const FLOW1_ACTORS = [
+  { icon: '👤', label: 'User' },
+  { icon: '📱', label: 'Client App' },
+  { icon: '🏛️', label: 'Auth Server' },
+  { icon: '🗄️', label: 'API' },
+];
+const FLOW1_STEPS = [
+  { actor: 1, title: 'User clicks "Sign in with Google"',
+    detail: 'The client app builds a redirect URL to the authorization server&rsquo;s /authorize endpoint and opens it in the browser.',
+    http: `<span class="http-redirect">REDIRECT</span> 302 →
+<span class="http-url">https://auth.example.com/authorize?</span>
+  <span class="http-key">response_type</span>=<span class="http-val">code</span>
+  &amp;<span class="http-key">client_id</span>=<span class="http-val">myapp_123</span>
+  &amp;<span class="http-key">redirect_uri</span>=<span class="http-val">myapp://callback</span>
+  &amp;<span class="http-key">scope</span>=<span class="http-val">openid email profile</span>
+  &amp;<span class="http-key">state</span>=<span class="http-val">xyz789</span>` },
+  { actor: 2, title: 'Browser hits the authorization endpoint',
+    detail: 'The auth server checks the request, then shows the login + consent screen to the user.',
+    http: `<span class="http-method">GET</span> <span class="http-url">/authorize?response_type=code&amp;client_id=myapp_123&amp;...</span>
+<span class="http-comment">// Auth server renders login page</span>` },
+  { actor: 0, title: 'User logs in &amp; consents',
+    detail: 'User enters their password into the auth server (NOT into your app). Reviews the requested scopes. Clicks Allow.',
+    http: `<span class="http-method">POST</span> <span class="http-url">/login</span>
+<span class="http-key">username</span>=alice@example.com&amp;<span class="http-key">password</span>=*****` },
+  { actor: 2, title: 'Auth server issues authorization code &amp; redirects back',
+    detail: 'Generates a short-lived (~60s) authorization code, stores it bound to the client_id, and 302s the browser back to the redirect_uri.',
+    http: `<span class="http-redirect">REDIRECT</span> 302 →
+<span class="http-url">myapp://callback?</span>
+  <span class="http-key">code</span>=<span class="http-val">SplxlOBeZQQYbYS6WxSbIA</span>
+  &amp;<span class="http-key">state</span>=<span class="http-val">xyz789</span>
+<span class="http-comment">// ⚠ The code is in the URL — visible to anyone who can see the redirect</span>` },
+  { actor: 1, title: 'Client receives the authorization code',
+    detail: 'The OS dispatches the redirect to whichever app registered myapp:// scheme.',
+    http: `<span class="http-comment">// On mobile: Android/iOS dispatches the URL to the registered handler</span>
+<span class="http-comment">// On web (server-side): browser hits the redirect_uri on your backend</span>` },
+  { actor: 1, title: 'Client exchanges code for tokens',
+    detail: 'POST to /token with the code, client_id, and (for confidential clients) client_secret.',
+    http: `<span class="http-method">POST</span> <span class="http-url">https://auth.example.com/token</span>
+<span class="http-header">Content-Type:</span> application/x-www-form-urlencoded
+
+<span class="http-key">grant_type</span>=<span class="http-val">authorization_code</span>
+&amp;<span class="http-key">code</span>=<span class="http-val">SplxlOBeZQQYbYS6WxSbIA</span>
+&amp;<span class="http-key">redirect_uri</span>=<span class="http-val">myapp://callback</span>
+&amp;<span class="http-key">client_id</span>=<span class="http-val">myapp_123</span>
+&amp;<span class="http-key">client_secret</span>=<span class="http-val">s3cr3t</span> <span class="http-comment">// only for confidential clients</span>` },
+  { actor: 2, title: 'Auth server validates &amp; returns tokens',
+    detail: 'Checks code is unused, not expired, and bound to this client_id. Returns access token, refresh token, and (OIDC) ID token.',
+    http: `<span class="http-method">200 OK</span>
+{
+  <span class="http-key">"access_token"</span>: <span class="http-val">"ya29.A0Ae..."</span>,
+  <span class="http-key">"token_type"</span>: <span class="http-val">"Bearer"</span>,
+  <span class="http-key">"expires_in"</span>: <span class="http-val">3600</span>,
+  <span class="http-key">"refresh_token"</span>: <span class="http-val">"1//04..."</span>,
+  <span class="http-key">"id_token"</span>: <span class="http-val">"eyJhbGciOiJSUzI1NiIs..."</span>
+}` },
+  { actor: 3, title: 'Client calls the API with the access token',
+    detail: 'Bearer token in the Authorization header. The resource server validates it and returns data.',
+    http: `<span class="http-method">GET</span> <span class="http-url">https://api.example.com/photos</span>
+<span class="http-header">Authorization:</span> <span class="http-val">Bearer ya29.A0Ae...</span>
+
+<span class="http-method">200 OK</span>
+[ { "id": 1, "url": "..." }, ... ]` },
+];
+
+let flow1Idx = 0;
+
+function renderFlow1Actors(activeIdx) {
+  document.getElementById('flow1Actors').innerHTML = FLOW1_ACTORS.map((a, i) =>
+    `<div class="flow-actor ${i === activeIdx ? 'active' : ''}">
+      <div class="a-icon">${a.icon}</div>
+      <div class="a-label">${a.label}</div>
+    </div>`
+  ).join('');
+}
+function renderFlow1Steps() {
+  document.getElementById('flow1Steps').innerHTML = FLOW1_STEPS.map((s, i) => {
+    const cls = i === flow1Idx - 1 ? 'active' : (i < flow1Idx - 1 ? 'done' : '');
+    return `<div class="flow-step ${cls}">
+      <span class="step-num">${i + 1}.</span>
+      <span class="step-title">${s.title}</span>
+      <div class="step-detail">${s.detail}</div>
+      ${i === flow1Idx - 1 ? `<div class="http-box">${s.http}</div>` : ''}
+    </div>`;
+  }).join('');
+  document.getElementById('flow1Counter').textContent = flow1Idx;
+  renderFlow1Actors(flow1Idx > 0 ? FLOW1_STEPS[flow1Idx - 1].actor : -1);
+}
+function flow1Next() {
+  if (flow1Idx < FLOW1_STEPS.length) flow1Idx++;
+  else flow1Idx = 0;
+  renderFlow1Steps();
+}
+function flow1Reset() { flow1Idx = 0; renderFlow1Steps(); }
+flow1Reset();
+
+// =================== ATTACK SIM (single) ===================
+const ATTACK_STAGES = [
+  { text: '1. User opens the real app, taps "Sign in".', cls: '' },
+  { text: '2. Real app builds /authorize URL, opens browser.', cls: '' },
+  { text: '3. User logs in at the auth server.', cls: '' },
+  { text: '4. Auth server redirects back: <code style="color:#ffb74d;">myapp://callback?code=ABC123</code>', cls: '' },
+  { text: '5. 😈 Malicious app also registered <code style="color:#ffb74d;">myapp://</code> — the OS dispatches to it instead.', cls: 'bad' },
+  { text: '6. 😈 Malicious app receives <code>code=ABC123</code>.', cls: 'bad' },
+  { text: '7. 😈 Malicious app POSTs to /token with the code (no secret needed — public client).', cls: 'bad' },
+  { text: '8. 🏛️ Auth server checks: code valid, client_id matches… returns access token.', cls: 'bad' },
+  { text: '9. 😈 Malicious app now has the user&rsquo;s access token.', cls: 'bad' },
+];
+function runAttack() {
+  const stages = document.getElementById('attackStages');
+  stages.innerHTML = ATTACK_STAGES.map(s => `<div class="attack-stage ${s.cls}">${s.text}</div>`).join('');
+  document.getElementById('runAttackBtn').disabled = true;
+  let i = 0;
+  const tick = () => {
+    if (i >= ATTACK_STAGES.length) {
+      document.getElementById('attackResult').innerHTML =
+        `<div class="attack-result bad">🚨 Account compromised &mdash; attacker has access token</div>`;
+      document.getElementById('runAttackBtn').disabled = false;
+      return;
+    }
+    stages.children[i].classList.add('active');
+    i++;
+    setTimeout(tick, 700);
+  };
+  tick();
+}
+function resetAttack() {
+  document.getElementById('attackStages').innerHTML =
+    ATTACK_STAGES.map(s => `<div class="attack-stage">${s.text}</div>`).join('');
+  document.getElementById('attackResult').innerHTML = '';
+}
+resetAttack();
+
+// =================== PKCE MATH ===================
+function randString(len) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+  let out = '';
+  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+async function sha256b64url(s) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  let bin = '';
+  const bytes = new Uint8Array(buf);
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+let currentVerifier = '';
+let currentChallenge = '';
+async function regeneratePkce() {
+  currentVerifier = randString(64);
+  currentChallenge = await sha256b64url(currentVerifier);
+  document.getElementById('pkceMath').innerHTML =
+    `<span class="lbl">Step 1 — client generates random code_verifier (43–128 chars, [A-Z a-z 0-9 - . _ ~])</span>
+<span class="var">code_verifier</span> <span class="op">=</span> <span class="val">"${currentVerifier}"</span>
+
+<span class="lbl">Step 2 — derive code_challenge by hashing</span>
+<span class="var">code_challenge</span> <span class="op">=</span> base64url(SHA256(code_verifier))
+                 <span class="op">=</span> <span class="val">"${currentChallenge}"</span>
+
+<span class="lbl">What goes where</span>
+→ Send <span class="var">code_challenge</span> <span class="op">+</span> <span class="var">code_challenge_method</span>=<span class="val">S256</span> in <span class="op">/authorize</span>
+→ Send <span class="var">code_verifier</span> in <span class="op">/token</span>
+→ Server checks: SHA256(code_verifier) <span class="op">==</span> stored code_challenge`;
+}
+regeneratePkce();
+
+// =================== FLOW 2: WITH PKCE ===================
+const FLOW2_STEPS = [
+  { actor: 1, title: '🔑 Client generates code_verifier &amp; code_challenge',
+    detail: 'Before opening the browser. The verifier stays in memory; only the hash leaves the device.',
+    http: `<span class="http-comment">// crypto.getRandomValues() / SecureRandom</span>
+<span class="http-key">code_verifier</span> = <span class="http-val">"${currentVerifier ? currentVerifier.slice(0, 30) + '...' : ''}"</span>
+<span class="http-key">code_challenge</span> = base64url(SHA256(code_verifier))
+                = <span class="http-val">"${currentChallenge ? currentChallenge.slice(0, 30) + '...' : ''}"</span>` },
+  { actor: 1, title: 'User clicks "Sign in"',
+    detail: 'Same as before, but the redirect URL now includes the code_challenge (not the verifier).',
+    http: `<span class="http-redirect">REDIRECT</span> 302 →
+<span class="http-url">https://auth.example.com/authorize?</span>
+  <span class="http-key">response_type</span>=<span class="http-val">code</span>
+  &amp;<span class="http-key">client_id</span>=<span class="http-val">myapp_123</span>
+  &amp;<span class="http-key">redirect_uri</span>=<span class="http-val">myapp://callback</span>
+  &amp;<span class="http-key">scope</span>=<span class="http-val">openid email</span>
+  &amp;<span class="http-key">state</span>=<span class="http-val">xyz789</span>
+  &amp;<span class="http-key">code_challenge</span>=<span class="http-val">E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM</span> <span class="http-comment">// ← NEW</span>
+  &amp;<span class="http-key">code_challenge_method</span>=<span class="http-val">S256</span>          <span class="http-comment">// ← NEW</span>` },
+  { actor: 2, title: 'Auth server stores the challenge',
+    detail: 'Bound to the (yet-to-be-issued) authorization code. Shows login screen.',
+    http: `<span class="http-comment">// In auth server&rsquo;s memory/DB:</span>
+authCodeBinding = {
+  code: <span class="http-val">"(not issued yet)"</span>,
+  client_id: <span class="http-val">"myapp_123"</span>,
+  code_challenge: <span class="http-val">"E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"</span>,
+  code_challenge_method: <span class="http-val">"S256"</span>
+}` },
+  { actor: 0, title: 'User logs in &amp; consents',
+    detail: 'Same as the no-PKCE flow. Auth server now generates the authorization code.',
+    http: `<span class="http-method">POST</span> /login &mdash; user authenticates
+<span class="http-comment">// Auth server now binds: code → code_challenge mapping</span>` },
+  { actor: 2, title: 'Auth server redirects back with code',
+    detail: 'Same as before. The challenge stays server-side.',
+    http: `<span class="http-redirect">REDIRECT</span> 302 →
+<span class="http-url">myapp://callback?</span>
+  <span class="http-key">code</span>=<span class="http-val">SplxlOBeZQQYbYS6WxSbIA</span>
+  &amp;<span class="http-key">state</span>=<span class="http-val">xyz789</span>` },
+  { actor: 1, title: 'Real client receives code',
+    detail: 'Real app still has the code_verifier in memory. Malicious app does not — it only saw the redirect URL containing the code.',
+    http: '<span class="http-comment">// Real app: holds code AND code_verifier\n// Malicious app (if it stole code): holds code, NO code_verifier</span>' },
+  { actor: 1, title: '🔑 Client exchanges code + code_verifier for tokens',
+    detail: 'The verifier is sent in the body of the POST. This is the proof that &ldquo;I am the client that started the authorization request&rdquo;.',
+    http: `<span class="http-method">POST</span> <span class="http-url">https://auth.example.com/token</span>
+
+<span class="http-key">grant_type</span>=<span class="http-val">authorization_code</span>
+&amp;<span class="http-key">code</span>=<span class="http-val">SplxlOBeZQQYbYS6WxSbIA</span>
+&amp;<span class="http-key">redirect_uri</span>=<span class="http-val">myapp://callback</span>
+&amp;<span class="http-key">client_id</span>=<span class="http-val">myapp_123</span>
+&amp;<span class="http-key">code_verifier</span>=<span class="http-val">${currentVerifier ? currentVerifier.slice(0, 50) + '...' : ''}</span> <span class="http-comment">// ← NEW</span>` },
+  { actor: 2, title: '🔍 Auth server verifies challenge',
+    detail: 'Recomputes SHA256(code_verifier) and compares to the stored challenge. If they match, return tokens. If not, reject.',
+    http: `<span class="http-comment">// Auth server logic:</span>
+expected = base64url(sha256(req.code_verifier))
+stored   = lookup(req.code).code_challenge
+<span class="http-key">if</span> (expected != stored) <span class="http-redirect">return 400 invalid_grant</span>
+<span class="http-key">else</span> issue tokens` },
+  { actor: 2, title: 'Tokens returned',
+    detail: 'Same response as before.',
+    http: `<span class="http-method">200 OK</span>
+{
+  <span class="http-key">"access_token"</span>: <span class="http-val">"ya29..."</span>,
+  <span class="http-key">"id_token"</span>:    <span class="http-val">"eyJ..."</span>,
+  <span class="http-key">"refresh_token"</span>: <span class="http-val">"1//..."</span>,
+  <span class="http-key">"expires_in"</span>: <span class="http-val">3600</span>
+}` },
+  { actor: 3, title: 'Client calls API with access token',
+    detail: 'Same as before. PKCE only changes the authorization-code-to-token step.',
+    http: `<span class="http-method">GET</span> <span class="http-url">https://api.example.com/photos</span>
+<span class="http-header">Authorization:</span> Bearer ya29...` },
+];
+
+let flow2Idx = 0;
+function renderFlow2Actors(activeIdx) {
+  document.getElementById('flow2Actors').innerHTML = FLOW1_ACTORS.map((a, i) =>
+    `<div class="flow-actor ${i === activeIdx ? 'active' : ''}">
+      <div class="a-icon">${a.icon}</div>
+      <div class="a-label">${a.label}</div>
+    </div>`
+  ).join('');
+}
+function renderFlow2Steps() {
+  document.getElementById('flow2Steps').innerHTML = FLOW2_STEPS.map((s, i) => {
+    const cls = i === flow2Idx - 1 ? 'active' : (i < flow2Idx - 1 ? 'done' : '');
+    return `<div class="flow-step ${cls}">
+      <span class="step-num">${i + 1}.</span>
+      <span class="step-title">${s.title}</span>
+      <div class="step-detail">${s.detail}</div>
+      ${i === flow2Idx - 1 ? `<div class="http-box">${s.http}</div>` : ''}
+    </div>`;
+  }).join('');
+  document.getElementById('flow2Counter').textContent = flow2Idx;
+  renderFlow2Actors(flow2Idx > 0 ? FLOW2_STEPS[flow2Idx - 1].actor : -1);
+}
+function flow2Next() {
+  if (flow2Idx < FLOW2_STEPS.length) flow2Idx++;
+  else flow2Idx = 0;
+  renderFlow2Steps();
+}
+function flow2Reset() { flow2Idx = 0; renderFlow2Steps(); }
+flow2Reset();
+
+// =================== SIDE-BY-SIDE ATTACK ===================
+const SIM1_STAGES = [
+  { text: '1. Real app starts auth, no PKCE.', cls: '' },
+  { text: '2. 😈 Attacker intercepts redirect, steals <code>code=ABC123</code>.', cls: 'bad' },
+  { text: '3. 😈 Attacker POSTs <code>code=ABC123</code> to /token.', cls: 'bad' },
+  { text: '4. 🏛️ Auth server checks: code valid? ✓', cls: 'bad' },
+  { text: '5. 🏛️ Returns access token.', cls: 'bad' },
+];
+const SIM2_STAGES = [
+  { text: '1. Real app generates <code>verifier</code> + <code>challenge</code>.', cls: '' },
+  { text: '2. Real app sends <code>challenge</code> to /authorize.', cls: '' },
+  { text: '3. 😈 Attacker intercepts redirect, steals <code>code=ABC123</code>.', cls: 'bad' },
+  { text: '4. 😈 Attacker POSTs <code>code=ABC123</code> to /token. <strong>Has no verifier.</strong>', cls: 'bad' },
+  { text: '5. 🏛️ Auth server: SHA256(?) ≠ stored challenge.', cls: 'good' },
+  { text: '6. 🏛️ Returns <code>400 invalid_grant</code>.', cls: 'good' },
+];
+function resetSideBySide() {
+  document.getElementById('sim1Stages').innerHTML = SIM1_STAGES.map(s => `<div class="attack-stage ${s.cls}">${s.text}</div>`).join('');
+  document.getElementById('sim2Stages').innerHTML = SIM2_STAGES.map(s => `<div class="attack-stage ${s.cls}">${s.text}</div>`).join('');
+  document.getElementById('sim1Result').innerHTML = '';
+  document.getElementById('sim2Result').innerHTML = '';
+}
+function runSideBySide() {
+  resetSideBySide();
+  document.getElementById('sideBySideBtn').disabled = true;
+  const sim1 = document.getElementById('sim1Stages');
+  const sim2 = document.getElementById('sim2Stages');
+  let i1 = 0, i2 = 0;
+  const max = Math.max(SIM1_STAGES.length, SIM2_STAGES.length);
+  const tick = (k) => {
+    if (k > max) {
+      document.getElementById('sim1Result').innerHTML = `<div class="attack-result bad">🚨 Token stolen</div>`;
+      document.getElementById('sim2Result').innerHTML = `<div class="attack-result good">🛡️ Attack rejected</div>`;
+      document.getElementById('sideBySideBtn').disabled = false;
+      return;
+    }
+    if (k - 1 < SIM1_STAGES.length) sim1.children[k - 1].classList.add('active');
+    if (k - 1 < SIM2_STAGES.length) sim2.children[k - 1].classList.add('active');
+    setTimeout(() => tick(k + 1), 800);
+  };
+  tick(1);
+}
+resetSideBySide();
+
+// =================== JWT INSPECTOR ===================
+const SAMPLE_JWT = 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjJjODE0MzQwNzMwYjQzNGQzYjMyYTJhNGU0In0.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJzdWIiOiIxMTIyMzM0NDU1IiwiYXVkIjoibXlhcHBfMTIzIiwiaWF0IjoxNzMwMDAwMDAwLCJleHAiOjE3MzAwMDM2MDAsIm5vbmNlIjoieHl6Nzg5IiwiZW1haWwiOiJhbGljZUBleGFtcGxlLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiQWxpY2UgRXhhbXBsZSIsImF0X2hhc2giOiJqVjFNZmlSWHE0WUNuc3hHTnpqLXVRIn0.SIG_SHORTENED';
+const CLAIM_DESC = {
+  iss: 'Issuer — auth server URL',
+  sub: 'Subject — user&rsquo;s unique ID',
+  aud: 'Audience — client_id of your app',
+  iat: 'Issued at (Unix epoch)',
+  exp: 'Expires at (Unix epoch)',
+  nonce: 'Replay protection — must match yours',
+  email: 'User email',
+  email_verified: 'Email verified flag',
+  name: 'Display name',
+  at_hash: 'Hash of access token — defends against token swap',
+  alg: 'Signing algorithm',
+  typ: 'Token type',
+  kid: 'Key ID — picks the right JWKS key',
+};
+function jwtDecode(s) {
+  const parts = s.split('.');
+  const dec = (b) => {
+    try { return JSON.parse(atob(b.replace(/-/g, '+').replace(/_/g, '/'))); }
+    catch (e) { return null; }
+  };
+  return { header: dec(parts[0]), payload: dec(parts[1]), sig: parts[2] };
+}
+function fmtClaim(k, v) {
+  let val = typeof v === 'object' ? JSON.stringify(v) : String(v);
+  if ((k === 'iat' || k === 'exp') && typeof v === 'number') {
+    val = `${v} (${new Date(v * 1000).toISOString()})`;
+  }
+  if (val.length > 50) val = val.slice(0, 50) + '…';
+  return `<div class="jwt-claim">
+    <span class="k">"${k}":</span>
+    <span class="v">${val}</span>
+    <span class="desc">${CLAIM_DESC[k] || ''}</span>
+  </div>`;
+}
+function renderJwt() {
+  const parts = SAMPLE_JWT.split('.');
+  document.getElementById('jwtPieces').innerHTML =
+    `<span class="header">${parts[0]}</span><span class="dot">.</span><span class="payload">${parts[1]}</span><span class="dot">.</span><span class="sig">${parts[2]}</span>`;
+
+  const { header, payload, sig } = jwtDecode(SAMPLE_JWT);
+  const headerHtml = Object.entries(header).map(([k, v]) => fmtClaim(k, v)).join('');
+  const payloadHtml = Object.entries(payload).map(([k, v]) => fmtClaim(k, v)).join('');
+  document.getElementById('jwtDecoded').innerHTML =
+    `<div class="jwt-card hdr">
+      <div class="ttl">Header</div>${headerHtml}
+    </div>
+    <div class="jwt-card pld">
+      <div class="ttl">Payload (claims)</div>${payloadHtml}
+    </div>
+    <div class="jwt-card sig">
+      <div class="ttl">Signature</div>
+      <div style="word-break:break-all;color:#6db33f;">${sig}</div>
+      <div style="color:#888;font-size:10px;line-height:1.6;margin-top:8px;">
+        RSA-SHA256(<br>
+        &nbsp;&nbsp;base64url(header) + "." + base64url(payload),<br>
+        &nbsp;&nbsp;auth-server-private-key<br>
+        )<br><br>
+        Verify with the public key from <code style="color:#ffb74d;">jwks_uri</code>.
+      </div>
+    </div>`;
+}
+renderJwt();
+
+// =================== PITFALLS ===================
+const PITFALLS = [
+  { title: 'Storing tokens in localStorage', detail: 'Any XSS bug exfiltrates the token instantly &mdash; localStorage is JS-readable. Prefer in-memory storage for SPAs, or HttpOnly + Secure + SameSite=Lax cookies in a backend-for-frontend (BFF) pattern.' },
+  { title: 'Missing or unvalidated <code>state</code> parameter', detail: 'state is an opaque value the client generates per-request and verifies on callback. Without it, an attacker can trick a logged-in user into completing a flow that links the attacker&rsquo;s account to the user&rsquo;s session (CSRF). PKCE does NOT replace state.' },
+  { title: 'Missing or unvalidated <code>nonce</code> in ID Token', detail: 'nonce protects against ID Token replay. Generate a fresh nonce per request, send it in /authorize, and check the ID Token&rsquo;s nonce claim matches. Without this, a stolen ID Token from another session can be replayed.' },
+  { title: 'Trusting access token claims to identify the user', detail: 'Access tokens are addressed to the API (<code>aud</code> = resource server), not to your client. The user identity belongs in the ID Token. Treat access tokens as opaque if you can.' },
+  { title: 'Skipping <code>aud</code> verification on ID Tokens', detail: 'If you don&rsquo;t check <code>aud == your_client_id</code>, you accept tokens issued for OTHER apps from the same auth server. This is a real-world auth bypass class of bugs.' },
+  { title: 'Using Implicit flow (<code>response_type=token</code>)', detail: 'Tokens travelled in URL fragments. Logged in browser history, referer headers, server logs. Deprecated by the OAuth Security BCP. Migrate to Auth Code + PKCE.' },
+  { title: 'Using Resource Owner Password Credentials (<code>grant_type=password</code>)', detail: 'You ask the user for their password and forward it to the auth server. Defeats the entire reason OAuth exists. Deprecated. Only acceptable for legacy first-party migrations.' },
+  { title: 'Long-lived access tokens', detail: 'A leaked token is valid until it expires. Use short-lived access tokens (e.g. 15 min) + refresh tokens. Rotate refresh tokens on each use (refresh-token rotation, RFC 6749 §6 BCP).' },
+];
+function renderPitfalls() {
+  document.getElementById('pitfalls').innerHTML = PITFALLS.map((p, i) =>
+    `<div class="pitfall" onclick="this.classList.toggle('open')">
+      <div class="p-title">${p.title}</div>
+      <div class="p-detail">${p.detail}</div>
+    </div>`
+  ).join('');
+}
+renderPitfalls();
+</script>
+
+<script src="cookie-consent.js"></script>
+</body>
+</html>
